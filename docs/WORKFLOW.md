@@ -16,6 +16,7 @@ No code gets written for a phase until that phase's doc status is FINALIZED. Exp
 
 ## Document status labels
 Every doc carries one status marker near the top:
+- **NOT STARTED** — stub only; no requirements exploration has happened yet
 - **DRAFT** — actively being explored, contents can change freely
 - **FINALIZED** — decided; changing it requires a deliberate revision, not a drive-by edit mid-conversation about something else
 - **SUPERSEDED** — replaced by a linked doc; kept for history, not deleted
@@ -28,9 +29,19 @@ Every doc carries one status marker near the top:
 
 ## Session end checklist
 1. If any decision changed during the session — including inside a phase marked FINALIZED — update the relevant doc immediately, don't leave it to memory
-2. Add a line to that doc's Revision History
+2. Add a line to that doc's Revision History, per [Decision provenance](#decision-provenance-git-for-logic) below
 3. If the change ripples into another doc (a Phase 3 decision invalidates something in `OVERVIEW.md`), update that doc too, same session
 4. If scope grew (new phase, new feature, new open question), reflect it in `PHASES.md` / `OVERVIEW.md` as a DRAFT stub — don't let it live only in chat history
+
+## Decision provenance (git for logic)
+Docs describe the current state only — present tense, no "was X", "would be Y", "previously said Z". If it isn't true right now, it doesn't belong in the body. This applies most to `OVERVIEW.md`, since it's the doc most likely to get re-explained in place.
+
+History lives in git, not in doc prose. When a decision changes:
+1. Find the commit that introduced the decision being replaced (`git log -p -- <file>` or `git blame <file>`).
+2. Add one line to that doc's Revision History: date, a short label for what changed, and the superseded commit's hash — e.g. `2026-09-09 — Redefined X (supersedes 7a46fd6)`. Not a rationale, not a restatement of the old value; the referenced commit already has both.
+3. Commit the doc change.
+
+The revision-history line plus `git show <hash>` reconstructs what changed, when, and why — the same way `git log`/`git blame` works for code. Keep entries short; let git carry the detail.
 
 ## How Claude should behave in this project (proactive teaching mode)
 The user is learning as this project goes, and wants to see the landscape, not just get an answer. When a decision involves a technology or approach choice (e.g. "should I use Unity or Godot", "NEAT or RL", "SQLite or something else"):
@@ -45,3 +56,4 @@ Docs drifting out of sync with reality *during* a session is expected and fine �
 
 ## Revision history
 - 2026-09-09 — Initial workflow doc created
+- 2026-09-09 — Added NOT STARTED status; added Decision provenance section (supersedes 7a46fd6)

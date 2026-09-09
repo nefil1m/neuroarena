@@ -10,8 +10,16 @@ A 2D (later possibly 3D) simulation platform where games and learning models are
 - Learning models decoupled from the game via a defined interface — a model doesn't know which game it's driving, a game doesn't know which model is driving it
 - First model backend: NEAT (neuroevolution) — population-based, no manual reward shaping required
 - Planned second model backend: deep RL (e.g. PPO via stable-baselines3), to prove the decoupling actually works
-- Configurable training/run behavior: population size, batch vs sequential run spawning, inheritance between runs, max deviation from track before death, collisions between cars on/off, adjustable simulation speed, headless vs rendered
-- Pluggable success criteria (finish line crossed / N checkpoints / manual track regeneration)
+- Configurable training/run behavior:
+  - Population size
+  - Generation spawn mode — **batch**: evaluate a full generation concurrently, advance to the next generation only once every individual has died or finished; vs **sequential**: no discrete generations, as soon as any individual dies immediately spawn a replacement bred from the current best genome, keeping the population continuously topped up
+  - Inheritance between runs
+  - Max deviation from track before death
+  - Car-to-car collisions on/off — all individuals in a generation are simulated in the same shared space simultaneously; collision with track bounds is always on (that's what defines going off-track), this toggle only controls whether cars can collide with each other
+  - Adjustable simulation speed
+  - Headless vs rendered
+- Pluggable per-run success criteria (finish line crossed / N checkpoints)
+- Track lifecycle is a separate, user-driven decision, not a per-run success signal: training keeps running on the current track until the user manually decides they've trained all they usefully can on it and regenerates/switches to a new one
 - Persistence: checkpointing and resuming training runs, run history
 - Control interface: local web dashboard that works with the simulation running headless, with live metrics, live config changes, and an optional live canvas view
 - Future/stretch: additional 2D games on the same interfaces, testing models across games, 3D
@@ -42,3 +50,4 @@ None of these are FINALIZED. They were working assumptions from the initial conv
 
 ## Revision history
 - 2026-09-09 — Initial draft, seeded from early conversation
+- 2026-09-09 — Redefined generation spawn mode, collisions, and success criteria vs track switching (supersedes 7a46fd6)
