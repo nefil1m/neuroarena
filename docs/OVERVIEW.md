@@ -1,6 +1,6 @@
 # Project Overview — Car AI Game Platform
 
-Status: **DRAFT** — the platform-level decisions below were settled in the 2026-09-09 decisions pass (see Key decisions and Revision history). Per-phase requirements exploration is still open and happens in the individual phase docs. This document has not been deliberately marked FINALIZED yet.
+Status: **FINALIZED** — the platform-level decisions in this document are settled and left DRAFT on 2026-09-10. Changing any of them now requires a deliberate revision (see `WORKFLOW.md`), not a drive-by edit. Per-phase requirements exploration continues in the individual phase docs and does not reopen this document unless it contradicts a platform-level decision here.
 
 ## Pitch
 A 2D (later possibly 3D) simulation platform where games and learning models are decoupled: build a driving game, train models to play it, swap in different model types or games, and control everything — including headless/background training — from a web dashboard.
@@ -41,7 +41,7 @@ A 2D (later possibly 3D) simulation platform where games and learning models are
 | Local vs remote | Local-first (localhost, single user, no auth in v1); architecture stays remote-capable by construction | decided |
 | Persistence | SQLite for run metadata/history, files for checkpoints; checkpoints are config-independent and carry a per-model settings-change history | decided |
 
-These are settled at the platform level. Per-phase specifics (numeric sensor constants, NEAT library choice, checkpoint format, track-generation algorithm, etc.) are still open and belong to the individual phase docs. This document is not marked FINALIZED until deliberately promoted (see `WORKFLOW.md`).
+These are settled at the platform level. Per-phase specifics (numeric sensor constants, NEAT library choice, checkpoint format, track-generation algorithm, etc.) remain open and belong to the individual phase docs; resolving them there does not require revising this document unless a phase decision contradicts a platform-level decision above.
 
 ## Open questions (non-exhaustive — expand freely during exploration)
 The six original open questions (engine, observation space, action space, cross-game match, dashboard scope, local vs remote) were resolved in the 2026-09-09 decisions pass — see Key decisions above and `git show` on the revision-history commits for the reasoning. Remaining open items, all owned by phase docs:
@@ -60,3 +60,4 @@ The six original open questions (engine, observation space, action space, cross-
 - 2026-09-09 — Initial draft, seeded from early conversation
 - 2026-09-09 — Redefined generation spawn mode, collisions, and success criteria vs track switching (supersedes 7a46fd6)
 - 2026-09-09 — Resolved all six open questions; settled engine (custom sim + `arcade` renderer), physics (kinematic bicycle), continuous action space, 10-float observation, strict cross-game descriptor match, three-phase dashboard, local-first/remote-capable; committed both learning backends; added real-game rendering, human play, and per-model settings-history requirements (supersedes 7a46fd6)
+- 2026-09-10 — Promoted from DRAFT to FINALIZED at the platform level; no decision content changed (supersedes 60c7011)

@@ -1,11 +1,11 @@
 # Phases — Car AI Project
 
-Status: **DRAFT** — this phase list is a first pass from early conversation. Phases may be split, merged, reordered, added, or dropped once requirements exploration (see `OVERVIEW.md`) progresses. Don't treat the numbering below as committed.
+Status: **FINALIZED** — the phase breakdown and ordering below are settled as of 2026-09-10. Individual phase docs are still explored and promoted to FINALIZED one at a time, but the set of phases and their sequence now changes only by deliberate revision (see `WORKFLOW.md`), not a drive-by edit.
 
 ## How to read this
 Each row links to a doc under `/phases/`. Those docs hold each phase's detailed requirements and, once settled, its implementation plan. Actual build work happens inside a phase doc, never here. Phases 0–10 now carry requirements seeded from the 2026-09-09 platform decisions pass (status: DRAFT); Phases 11–12 are stubs (NOT STARTED).
 
-Numbering is still DRAFT and reorderable. Learning backends (Phases 4, 10, …) are peers behind the Model interface — more may be inserted. The three dashboard phases (7, 8, 9) can be reordered relative to each other and to Phase 10, or have other work inserted between them.
+The phase set and its ordering are settled. Two flexibilities are part of that decision, not open questions: additional learning backends (peers of Phases 4 and 10 behind the Model interface) may be inserted later, and the three dashboard phases (7, 8, 9) may be reordered relative to each other and to Phase 10, or have other work inserted between them.
 
 ## Phase list (draft)
 
@@ -28,3 +28,4 @@ Numbering is still DRAFT and reorderable. Learning backends (Phases 4, 10, …) 
 ## Revision history
 - 2026-09-09 — Initial draft phase list, carried over from early conversation
 - 2026-09-09 — Split the dashboard into three phases (7–9), renamed the learning-backend phases (4, 10) as peers, renumbered stretch phases to 11–12, seeded requirements into Phases 0–10 (supersedes 7a46fd6)
+- 2026-09-10 — Promoted from DRAFT to FINALIZED; phase set and ordering locked, per-phase doc statuses unchanged (supersedes 60c7011)
