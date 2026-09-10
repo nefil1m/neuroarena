@@ -9,11 +9,11 @@ Implement the car game's observation and action spaces and wire the game to the 
 Carried over from the 2026-09-09 decisions pass. Dedicated exploration still needed before FINALIZED.
 
 - **Observation vector (v1): 10 floats, normalised** — 7 raycasts + normalised speed + last action (previous steering, previous throttle).
-- **Raycasts:** 7 rays in a forward-dense fan `[−75, −45, −20, 0, 20, 45, 75]°` relative to car heading. Value is **proximity** `1 − d/range` (0 = clear, 1 = boundary at the bumper). Rays detect the **track boundary only** in v1; other-car detection is a flagged add-on delivered alongside Phase 5 collisions.
+- **Raycasts:** 7 rays in a forward-dense fan `[−75, −45, −20, 0, 20, 45, 75]°` relative to car heading. Value is **proximity** `1 − d/range` (0 = clear, 1 = boundary at the bumper). Rays detect the **track boundary only** — there are no other cars in the simulation, since each genome is evaluated in isolation (Phase 4).
 - **Ray range is speed-scaled:** `range = base + k · speed_norm` (see farther when moving faster).
-- **Sensor layout is configurable at run creation** (ray count, angles, range params); the values above are the platform-standard default. A non-default sensor config is flagged in the UI as breaking model transfer to other games and breaking resume of an existing model.
+- **Sensor layout is configurable at run creation** (ray count, angles, range params); the values above are the platform-standard default. A non-default sensor config changes the observation shape, so it starts a fresh model rather than resuming an existing one (per the Phase 0 model/config compatibility check).
 - **Action space:** continuous `Box`, 2 dimensions, each `[−1, 1]` — steering, throttle. Exposed as a typed descriptor per the Phase 0 contract.
-- The car game implements the Phase 0 Environment interface. Its observation and action descriptors are exactly what the cross-game strict-match rule (Phase 0) compares.
+- The car game implements the Phase 0 Environment interface. Its observation and action descriptors are what the Phase 0 model/config compatibility check compares.
 - **The car Environment enforces a configurable maximum episode length** (step count and/or sim-time) and sets `truncated` when it is hit, per the Phase 0 flag contract (`terminated` = crash / finish / off-track; `truncated` = budget hit). The limit is a config parameter (Phase 5), never hard-coded. This is the single-agent "stuck forever" guard; the population-level per-generation ceiling is Phase 4.
 
 ## Open questions
@@ -28,3 +28,4 @@ _Do not write this section until Requirements above is FINALIZED._
 - 2026-09-09 — Stub created.
 - 2026-09-09 — Seeded requirements from the platform decisions pass; status → DRAFT.
 - 2026-09-10 — Added the requirement that the car Environment enforces a configurable max episode length and sets `truncated`. This enforcement was briefly placed in the Phase 0 base interface earlier the same day, then moved here: Phase 0 fixes only the meaning of the `terminated` / `truncated` flags, and the standalone game (Phase 1) has no episode concept.
+- 2026-09-10 — Followed the platform scope cut (see `../OVERVIEW.md`): raycasts detect the track boundary only, with no other-car detection add-on, because genomes are now evaluated in isolation (Phase 4) and there are no other cars. A non-default sensor config is now described as "starts a fresh model" via the Phase 0 compatibility check rather than "breaks model transfer to other games" — cross-game transfer is no longer a goal.
