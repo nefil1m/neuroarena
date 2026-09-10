@@ -14,6 +14,9 @@ This project spans many chat sessions with resets in between. This document is t
 ## The rule: decide before building
 No code gets written for a phase until that phase's doc status is FINALIZED. Exploration, options, and trade-offs happen in the doc first, in writing. This applies to the project as a whole too: `OVERVIEW.md` and `PHASES.md` both need to leave DRAFT before Phase 0 implementation starts.
 
+## How phases are divided
+Phases are split by **aspect of the project** — a coherent slice of functionality or concern (the interfaces, the game core, track generation, a learning backend, a dashboard slice) — not by estimated effort. A phase may turn out large enough to need a multi-step implementation plan, or to be split into sub-phases once it is planned in detail. That is a plan-level decision made when the phase is worked, not a reason to pre-fragment the phase list. Keep `PHASES.md` organised by what each phase *is about*; let volume be handled in the plan.
+
 ## The rule: stay within the current phase
 When working on a phase, do the work that phase scopes — no more. A problem, edge case, or design question that a later phase explicitly owns is solved *there*, not now.
 
@@ -69,3 +72,4 @@ Docs drifting out of sync with reality *during* a session is expected and fine �
 - 2026-09-09 — Added the NOT STARTED status label — for stub docs where no requirements exploration has happened yet, distinct from DRAFT — and added a Decision provenance section. Before this the Session-end checklist said only "add a line to the Revision History" with no rule for what that line should contain (supersedes 7a46fd6).
 - 2026-09-10 — Rewrote the Decision provenance rule. It previously required each revision-history entry to be a bare label plus the superseded commit hash, with the rationale and old values deliberately left out ("history lives in git"). Entries must now be self-contained prose — what changed, from what to what, and why — understandable without running git. Existing thin entries across all docs were backfilled to this standard. Reason: the project spans many sessions with memory resets, so the docs themselves must carry the reasoning, not just point at commits.
 - 2026-09-10 — Added "The rule: stay within the current phase". There was no explicit rule against solving a later phase's problems while working on the current one; adjusting later phase docs is allowed, but implementing their concerns (code, schema, interface) is not — a stub or reserved field is the right depth.
+- 2026-09-10 — Added "How phases are divided": phases are split by aspect of the project, not by estimated effort. A large phase is broken into steps (or sub-phases) at plan time, not by pre-splitting the phase list. Recorded because the question came up whether the small Phase 0 or a future large phase should be pre-split — the answer is that phase boundaries track concerns, plans track volume.
