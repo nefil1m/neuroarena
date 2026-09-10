@@ -99,7 +99,15 @@ Deferred by design, not blockers for FINALIZED. Resolving them happens in the ph
 - The schema-migration mechanism (a registry of `vN -> vN+1` functions vs something lighter) — built at the first real `schema_version` bump; Phase 0 only reserves the field and the hook.
 
 ## Implementation plan
-_Do not write this section until Requirements above is FINALIZED._
+Detailed, step-by-step plan: [`../superpowers/plans/2026-09-10-phase-0-architecture.md`](../superpowers/plans/2026-09-10-phase-0-architecture.md).
+
+Six tasks, each ending in an independently testable, committed deliverable:
+1. **Project skeleton + tooling** — `pyproject.toml`, `uv` / `pytest` / `ruff`, `src/` layout, smoke test.
+2. **Space descriptors** — `Box` / `Discrete` frozen dataclasses with field-wise equality.
+3. **Interface Protocols** — `Environment` / `Model` / `Objective` / `Trainer` + `TrainingUpdate`, plus reusable test doubles.
+4. **Compatibility check** — `check_compatibility(model, environment)` descriptor gate.
+5. **`RunConfig` + serialization** — envelope dataclass, versioned JSON codec, `migrate` identity hook.
+6. **Import-hygiene guard** — test that the core packages pull in no `gymnasium` / renderer / trainer / heavy deps.
 
 ## Revision history
 - 2026-09-09 — Stub created.
@@ -111,3 +119,4 @@ _Do not write this section until Requirements above is FINALIZED._
 - 2026-09-10 — Unified scoring. Renamed the `SuccessCriterion` interface to `Objective` and added `step_reward()` (dense, for RL) alongside `fitness()` (episode score, for evolution), so one config-selected component is the single source of both signals — `step` still carries no `reward`, and the Phase 10 adapter reads `Objective.step_reward()`. Reason: the previous split implied the env computes reward and something else computes fitness; a single objective feeding both is a cleaner decoupling. Also added a "Run history & per-generation records" requirement — the recorded `TrainingUpdate` stream is the run history — and reserved (guaranteed not precluded) per-generation champion checkpoints + replay for design in Phases 4 / 6 / 9. `Trainer.__init__` and `load_checkpoint` now also take the `objective`.
 - 2026-09-10 — Settled two of the four open questions before finalizing: `Objective.update` takes the full step tuple `(observation, action, terminated, truncated, info)`; the trainer owns seeding and derives per-episode seeds from a `RunConfig` master seed. The remaining two (`TrainingUpdate` field additions, schema-migration mechanism) are explicitly deferred to the phases that own them and do not count as reopening this doc.
 - 2026-09-10 — Promoted to FINALIZED. The requirements set — interface Protocols, descriptors, compatibility check, decoupling rules, JSON config envelope, project scaffolding — is settled. Considered and rejected splitting Phase 0 into smaller phases: it is already the smallest, most cohesive phase, and volume is a plan-level concern handled by the implementation plan's task breakdown (see `../WORKFLOW.md`, "How phases are divided").
+- 2026-09-10 — Wrote the implementation plan (`../superpowers/plans/2026-09-10-phase-0-architecture.md`): six TDD tasks — skeleton/tooling, `Box`/`Discrete`, the Protocols + test doubles, `check_compatibility`, `RunConfig` + JSON codec, import-hygiene guard.
