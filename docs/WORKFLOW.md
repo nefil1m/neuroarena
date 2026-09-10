@@ -29,19 +29,22 @@ Every doc carries one status marker near the top:
 
 ## Session end checklist
 1. If any decision changed during the session — including inside a phase marked FINALIZED — update the relevant doc immediately, don't leave it to memory
-2. Add a line to that doc's Revision History, per [Decision provenance](#decision-provenance-git-for-logic) below
+2. Add a line to that doc's Revision History, per [Decision provenance](#decision-provenance) below
 3. If the change ripples into another doc (a Phase 3 decision invalidates something in `OVERVIEW.md`), update that doc too, same session
 4. If scope grew (new phase, new feature, new open question), reflect it in `PHASES.md` / `OVERVIEW.md` as a DRAFT stub — don't let it live only in chat history
 
-## Decision provenance (git for logic)
-Docs describe the current state only — present tense, no "was X", "would be Y", "previously said Z". If it isn't true right now, it doesn't belong in the body. This applies most to `OVERVIEW.md`, since it's the doc most likely to get re-explained in place.
+## Decision provenance
 
-History lives in git, not in doc prose. When a decision changes:
-1. Find the commit that introduced the decision being replaced (`git log -p -- <file>` or `git blame <file>`).
-2. Add one line to that doc's Revision History: date, a short label for what changed, and the superseded commit's hash — e.g. `2026-09-09 — Redefined X (supersedes 7a46fd6)`. Not a rationale, not a restatement of the old value; the referenced commit already has both.
-3. Commit the doc change.
+The docs are the record of what was decided and why — the way git is the record of how the code reached its current state. A reader should be able to reconstruct the project's decision history from the docs alone, without running any git commands.
 
-The revision-history line plus `git show <hash>` reconstructs what changed, when, and why — the same way `git log`/`git blame` works for code. Keep entries short; let git carry the detail.
+**The body describes the current state only.** Present tense. No "was X", "would be Y", "previously said Z". If it isn't true right now, it doesn't belong in the body. This applies most to `OVERVIEW.md`, the doc most likely to get re-explained in place.
+
+**The Revision History is the changelog.** When a decision changes, add a dated entry that stands on its own:
+1. The date, absolute (e.g. `2026-09-10`).
+2. What changed — the previous decision and the new one, briefly.
+3. Why it changed — the reasoning, in a sentence or two.
+
+A commit hash may be added for convenience, but the entry must be fully understandable without it. Then commit the doc change. Keep entries tight, but self-contained: a future session with no memory of this conversation should understand what happened and why from the entry alone.
 
 ## How Claude should behave in this project (proactive teaching mode)
 The user is learning as this project goes, and wants to see the landscape, not just get an answer. When a decision involves a technology or approach choice (e.g. "should I use Unity or Godot", "NEAT or RL", "SQLite or something else"):
@@ -55,5 +58,6 @@ This applies most heavily during requirements exploration. Once a phase is FINAL
 Docs drifting out of sync with reality *during* a session is expected and fine — that's what exploration looks like. What's not fine is ending a session with that drift unresolved. Every doc touched by a decision made this session gets updated before the session is considered closed.
 
 ## Revision history
-- 2026-09-09 — Initial workflow doc created
-- 2026-09-09 — Added NOT STARTED status; added Decision provenance section (supersedes 7a46fd6)
+- 2026-09-09 — Initial workflow doc created.
+- 2026-09-09 — Added the NOT STARTED status label — for stub docs where no requirements exploration has happened yet, distinct from DRAFT — and added a Decision provenance section. Before this the Session-end checklist said only "add a line to the Revision History" with no rule for what that line should contain (supersedes 7a46fd6).
+- 2026-09-10 — Rewrote the Decision provenance rule. It previously required each revision-history entry to be a bare label plus the superseded commit hash, with the rationale and old values deliberately left out ("history lives in git"). Entries must now be self-contained prose — what changed, from what to what, and why — understandable without running git. Existing thin entries across all docs were backfilled to this standard. Reason: the project spans many sessions with memory resets, so the docs themselves must carry the reasoning, not just point at commits.

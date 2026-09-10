@@ -26,6 +26,6 @@ The phase set and its ordering are settled. Two flexibilities are part of that d
 | 12 | 3D (stretch) | Explore what 3D would require — not scoped yet | `phases/phase-12-3d-stretch.md` |
 
 ## Revision history
-- 2026-09-09 — Initial draft phase list, carried over from early conversation
-- 2026-09-09 — Split the dashboard into three phases (7–9), renamed the learning-backend phases (4, 10) as peers, renumbered stretch phases to 11–12, seeded requirements into Phases 0–10 (supersedes 7a46fd6)
-- 2026-09-10 — Promoted from DRAFT to FINALIZED; phase set and ordering locked, per-phase doc statuses unchanged (supersedes 60c7011)
+- 2026-09-09 — Initial draft phase list, carried over from early conversation.
+- 2026-09-09 — Split the single "Phase 7 — Web Dashboard" into three reorderable phases: 7 (control panel), 8 (in-browser live canvas), 9 (advanced views), because one phase was too large for the dashboard. Renamed the two learning phases from "First Learning Model (NEAT)" / "Second Model Backend (RL)" to peer "Learning Backend" phases (4 NEAT, 10 deep RL), since both are equal consumers of one Model interface rather than a primary and a follow-up. Renumbered the stretch phases: second game 9 → 11, 3D 10 → 12. Seeded carried-over requirements into Phases 0–10 (supersedes 7a46fd6).
+- 2026-09-10 — Promoted from DRAFT to FINALIZED. The phase set and ordering are now locked and change only by deliberate revision; individual phase-doc statuses are unchanged. This is the deliberate promotion `WORKFLOW.md` requires before Phase 0 implementation can begin (supersedes 60c7011).
