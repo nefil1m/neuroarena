@@ -14,6 +14,13 @@ This project spans many chat sessions with resets in between. This document is t
 ## The rule: decide before building
 No code gets written for a phase until that phase's doc status is FINALIZED. Exploration, options, and trade-offs happen in the doc first, in writing. This applies to the project as a whole too: `OVERVIEW.md` and `PHASES.md` both need to leave DRAFT before Phase 0 implementation starts.
 
+## The rule: stay within the current phase
+When working on a phase, do the work that phase scopes — no more. A problem, edge case, or design question that a later phase explicitly owns is solved *there*, not now.
+
+- **Adjusting later phase docs is fine** — expected, even, when a decision in the current phase changes what a later phase will need. Update the later doc and add a revision-history line.
+- **Implementing a later phase's concerns is not.** Don't write the code, schema, or interface for a later phase's problem just because it's visible from here. A stub, a reserved field, or a `TODO(phase-N)` marker is the right depth — enough that the later phase isn't blocked, no more.
+- If holding scope seems to block progress, stop and raise it — that's a signal the phase boundaries need a deliberate revision, not a reason to quietly expand the current phase.
+
 ## Document status labels
 Every doc carries one status marker near the top:
 - **NOT STARTED** — stub only; no requirements exploration has happened yet
@@ -61,3 +68,4 @@ Docs drifting out of sync with reality *during* a session is expected and fine �
 - 2026-09-09 — Initial workflow doc created.
 - 2026-09-09 — Added the NOT STARTED status label — for stub docs where no requirements exploration has happened yet, distinct from DRAFT — and added a Decision provenance section. Before this the Session-end checklist said only "add a line to the Revision History" with no rule for what that line should contain (supersedes 7a46fd6).
 - 2026-09-10 — Rewrote the Decision provenance rule. It previously required each revision-history entry to be a bare label plus the superseded commit hash, with the rationale and old values deliberately left out ("history lives in git"). Entries must now be self-contained prose — what changed, from what to what, and why — understandable without running git. Existing thin entries across all docs were backfilled to this standard. Reason: the project spans many sessions with memory resets, so the docs themselves must carry the reasoning, not just point at commits.
+- 2026-09-10 — Added "The rule: stay within the current phase". There was no explicit rule against solving a later phase's problems while working on the current one; adjusting later phase docs is allowed, but implementing their concerns (code, schema, interface) is not — a stub or reserved field is the right depth.
