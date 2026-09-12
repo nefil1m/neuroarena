@@ -37,3 +37,6 @@ yarn-error.log*
 
 # --- Logs ---
 *.log
+
+# --- Runtime data ---
+data/
