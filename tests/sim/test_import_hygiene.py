@@ -6,8 +6,8 @@ import sys
 def test_sim_does_not_import_forbidden_dependencies():
     code = (
         "import sys, json; "
-        "import neuroarena.sim.track, neuroarena.sim.track_io, neuroarena.sim.physics, "
-        "neuroarena.sim.collision, neuroarena.sim.game; "
+        "import neuroarena.sim.track, neuroarena.sim.track_io, neuroarena.sim.track_generation, "
+        "neuroarena.sim.physics, neuroarena.sim.collision, neuroarena.sim.game; "
         "print(json.dumps(sorted(sys.modules)))"
     )
     result = subprocess.run(
