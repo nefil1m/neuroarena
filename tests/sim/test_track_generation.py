@@ -1,8 +1,11 @@
+import time
+
 import pytest
 
 from neuroarena.sim.track import Track
 from neuroarena.sim.track_generation import (
     SIZE_DRIFT,
+    TrackGenerationError,
     generate_track,
 )
 
@@ -46,3 +49,22 @@ def test_rejects_size_below_minimum() -> None:
 def test_rejects_out_of_range_complexity() -> None:
     with pytest.raises(ValueError):
         generate_track(size=12, complexity=1.5, seed=1)
+
+
+def test_rejects_size_with_no_even_tile_count_in_drift_window() -> None:
+    # size=5's ±15% drift window collapses to the single value [5, 5], and a 90°-only closed
+    # loop always has an even tile count (the grid graph is bipartite by (x+y) parity, so
+    # every cycle has even length) — so no attempt could ever succeed. This must fail fast
+    # with a message naming the reason, not silently exhaust the attempt budget: pin
+    # max_attempts/step_budget_factor absurdly high and assert it still returns quickly, and
+    # that the message explains the even-tile-count constraint rather than reporting
+    # exhausted attempts.
+    start = time.monotonic()
+    with pytest.raises(TrackGenerationError, match="even tile count") as excinfo:
+        generate_track(
+            size=5, complexity=0.5, seed=1, max_attempts=100_000, step_budget_factor=10_000
+        )
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 1.0, f"took {elapsed:.2f}s — looks like it exhausted attempts, not fast-fail"
+    assert "attempts" not in str(excinfo.value)

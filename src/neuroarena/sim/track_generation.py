@@ -44,6 +44,19 @@ def generate_track(
     max_length = math.floor(size * (1 + SIZE_DRIFT))
     step_budget = max(size * step_budget_factor, 200)
 
+    # A 90°-only closed loop is a cycle on a grid graph, which is bipartite by (x+y) parity —
+    # every cycle in a bipartite graph has even length, so a tile count is only reachable if
+    # it's even. [min_close_length, max_length] contains an even integer unless it has
+    # collapsed to a single odd value (any wider window straddles both parities); in that
+    # case no amount of retrying can ever close a loop, so fail fast instead of burning the
+    # full attempt budget on an impossible target.
+    if min_close_length == max_length and min_close_length % 2 != 0:
+        raise TrackGenerationError(
+            f"no even tile count exists within the ±{SIZE_DRIFT:.0%} window "
+            f"[{min_close_length}, {max_length}] for size={size} — a 90°-only closed loop "
+            f"always has an even tile count; try size={size - 1} or size={size + 1}"
+        )
+
     for _ in range(max_attempts):
         path = _walk_attempt(rng, min_close_length, max_length, complexity, step_budget)
         if path is not None:
