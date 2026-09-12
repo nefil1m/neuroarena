@@ -43,6 +43,10 @@ class Game:
         previous = self.car
         stepped = step_car(previous, steering, throttle, TICK_DT, self.constants)
         self.car = resolve_collision(
-            stepped, previous, self._boundary, self.constants.car_width / 2
+            stepped,
+            previous,
+            self._boundary,
+            self.constants.car_width / 2,
+            self.constants.wall_friction,
         )
         return GameState(car=self.car, track=self.track)

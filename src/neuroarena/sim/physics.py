@@ -13,15 +13,19 @@ class PhysicsConstants:
 
     wheelbase: float = 180.0
     max_steering_angle_deg: float = 35.0
-    max_speed: float = 500.0
-    accel: float = 250.0
-    brake_decel: float = 500.0
-    max_reverse_speed: float = 200.0
-    reverse_accel: float = 150.0
+    max_speed: float = 750.0
+    accel: float = 375.0
+    brake_decel: float = 750.0
+    max_reverse_speed: float = 300.0
+    reverse_accel: float = 225.0
     # Car body geometry (world units) — see the Phase 1 doc's "World scale" section for how
     # these derive from the vendored art's drivable width, not from the physics itself.
-    car_width: float = 148.0
-    car_length: float = 300.0
+    car_width: float = 148.0 / 3
+    car_length: float = 100.0
+    # Fraction of into-wall speed removed on a boundary hit (see collision.py). 1.0 = full
+    # head-on stop; lower = "slippery" walls that don't trap the car. A hard collider either
+    # way — this only tunes the speed loss on contact, not whether crossing is blocked.
+    wall_friction: float = 0.15
 
     @property
     def max_steering_angle_rad(self) -> float:

@@ -60,4 +60,7 @@ def test_car_cannot_cross_track_boundary() -> None:
     state = game.tick(0.0, 0.0)
 
     assert (cy + half_drivable) - state.car.y >= car_radius - 1e-6
-    assert math.isclose(state.car.speed, 0.0, abs_tol=1e-6)
+    # wall_friction < 1.0 makes the wall "slippery": a head-on hit loses only that fraction
+    # of speed, not all of it (see PhysicsConstants.wall_friction).
+    expected_speed = 100.0 * (1.0 - game.constants.wall_friction)
+    assert math.isclose(state.car.speed, expected_speed, abs_tol=1e-6)

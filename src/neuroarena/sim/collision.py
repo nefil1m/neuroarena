@@ -16,13 +16,19 @@ from neuroarena.sim.track import Point, Segment
 
 
 def resolve_collision(
-    state: CarState, previous: CarState, boundary: list[Segment], car_radius: float
+    state: CarState,
+    previous: CarState,
+    boundary: list[Segment],
+    car_radius: float,
+    wall_friction: float = 1.0,
 ) -> CarState:
-    """Push the car out of any wall segment it overlaps, and kill the velocity component
-    driving it into that wall. The kinematic model has no independent lateral velocity
-    (see physics.py) — speed is always along `heading` — so a grazing hit only loses the
-    head-on portion of that scalar speed and the car keeps moving, while a head-on hit
-    zeroes it outright.
+    """Push the car out of any wall segment it overlaps, and remove `wall_friction` (0-1)
+    of the velocity component driving it into that wall. The kinematic model has no
+    independent lateral velocity (see physics.py) — speed is always along `heading` — so a
+    grazing hit only loses part of that scalar speed and the car keeps moving, while a
+    head-on hit loses `wall_friction` of it outright. `wall_friction=1.0` (the default) is a
+    full head-on stop; lower values make the wall "slippery" — the position clamp below
+    still makes it a hard boundary either way, only the speed loss on contact changes.
 
     `previous` (the car's state before this tick's movement, assumed already valid) decides
     which side of a wall is "inside": a wall is a zero-width line, so at low relative speed a
@@ -45,8 +51,8 @@ def resolve_collision(
         vx, vy = speed * hx, speed * hy
         into_wall = -(vx * nx + vy * ny)
         if into_wall > 0:
-            vx += into_wall * nx
-            vy += into_wall * ny
+            vx += into_wall * wall_friction * nx
+            vy += into_wall * wall_friction * ny
             speed = vx * hx + vy * hy
 
     return replace(state, x=x, y=y, speed=speed)
