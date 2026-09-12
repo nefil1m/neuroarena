@@ -15,6 +15,8 @@ def migrate(raw: dict) -> dict:
 
     Identity today (only v1 exists). The first `vN -> vN+1` step is added here
     at the first schema bump; see phase-0-architecture.md open questions.
+    `loads` stamps `schema_version` to `SCHEMA_VERSION` on the dict this
+    returns, so each migration step only needs to transform the other fields.
     """
     return raw
 
@@ -33,5 +35,6 @@ def loads(text: str) -> RunConfig:
         )
     if version < SCHEMA_VERSION:
         raw = migrate(raw)
+        raw["schema_version"] = SCHEMA_VERSION
     known = {f.name for f in dataclasses.fields(RunConfig)}
     return RunConfig(**{k: v for k, v in raw.items() if k in known})
