@@ -90,6 +90,18 @@ _OPEN_EDGES: dict[TileKind, frozenset[Facing]] = {
     TileKind.CURVE_SW: frozenset({Facing.S, Facing.W}),
 }
 
+_EDGES_TO_KIND: dict[frozenset[Facing], TileKind] = {
+    edges: kind for kind, edges in _OPEN_EDGES.items()
+}
+
+
+def tile_kind_for_open_edges(a: Facing, b: Facing) -> TileKind:
+    """Inverse of `TileKind.open_edges`: the TileKind whose two open edges are exactly {a, b}."""
+    try:
+        return _EDGES_TO_KIND[frozenset({a, b})]
+    except KeyError:
+        raise ValueError(f"no TileKind connects {a.value} and {b.value}") from None
+
 
 class TrackValidationError(ValueError):
     """Raised when a track's cells do not form a single, edge-consistent closed loop."""

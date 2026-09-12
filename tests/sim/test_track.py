@@ -11,6 +11,7 @@ from neuroarena.sim.track import (
     Track,
     TrackValidationError,
     boundary_segments,
+    tile_kind_for_open_edges,
 )
 
 
@@ -111,3 +112,18 @@ def test_curve_arc_endpoints_meet_adjacent_straight_walls() -> None:
             and math.isclose(p[1], expected[1], abs_tol=1e-6)
             for p in points
         ), f"no arc point near {expected}"
+
+
+def test_tile_kind_for_open_edges_matches_known_kinds() -> None:
+    assert tile_kind_for_open_edges(Facing.N, Facing.S) == TileKind.STRAIGHT_NS
+    assert tile_kind_for_open_edges(Facing.S, Facing.N) == TileKind.STRAIGHT_NS  # order-independent
+    assert tile_kind_for_open_edges(Facing.E, Facing.W) == TileKind.STRAIGHT_EW
+    assert tile_kind_for_open_edges(Facing.N, Facing.E) == TileKind.CURVE_NE
+    assert tile_kind_for_open_edges(Facing.N, Facing.W) == TileKind.CURVE_NW
+    assert tile_kind_for_open_edges(Facing.S, Facing.E) == TileKind.CURVE_SE
+    assert tile_kind_for_open_edges(Facing.S, Facing.W) == TileKind.CURVE_SW
+
+
+def test_tile_kind_for_open_edges_rejects_same_facing_twice() -> None:
+    with pytest.raises(ValueError):
+        tile_kind_for_open_edges(Facing.N, Facing.N)
