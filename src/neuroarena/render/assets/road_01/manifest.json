@@ -1,31 +1,8 @@
 {
   "schema_version": 1,
   "style": "Road_01",
-  "source": "craftpix-889156-free-racing-game-kit (PNG/Road_01, PNG/Decor, PNG/Background_Tiles, PNG/Car_1_Main_Positions)",
-  "base_tiles": {
-    "STRAIGHT_EW": {
-      "composite": "straight/composite.png",
-      "layers": [
-        "straight/Layers/Road_Main.png",
-        "straight/Layers/Road_Side_01.png",
-        "straight/Layers/Road_Side_02.png"
-      ]
-    },
-    "CURVE_SE": {
-      "composite": "curve/composite.png",
-      "layers": [
-        "curve/Layers/Road_Main.png",
-        "curve/Layers/Road_Side_01.png",
-        "curve/Layers/Road_Side_02.png"
-      ]
-    }
-  },
-  "derived_tiles": {
-    "STRAIGHT_NS": {"from": "STRAIGHT_EW", "rotate_degrees": 90},
-    "CURVE_SW": {"from": "CURVE_SE", "rotate_degrees": 90},
-    "CURVE_NW": {"from": "CURVE_SE", "rotate_degrees": 180},
-    "CURVE_NE": {"from": "CURVE_SE", "rotate_degrees": 270}
-  },
+  "source": "craftpix-889156-free-racing-game-kit (PNG/Road_01/Road_01_Tile_05, PNG/Decor, PNG/Background_Tiles, PNG/Car_1_Main_Positions)",
+  "surface": "asphalt.png",
   "car": "../car/car_1.png",
   "decor": {
     "start_finish": "../decor/start_finish.png"

@@ -10,18 +10,21 @@ import arcade
 from neuroarena.render.input import KeyboardInput
 from neuroarena.render.manifest import AssetManifest
 from neuroarena.sim.game import TICK_DT, Game
-from neuroarena.sim.track import DRIVABLE_WIDTH
+from neuroarena.sim.track import DRIVABLE_WIDTH, Segment, boundary_segments
 
 WINDOW_WIDTH = 1280
 WINDOW_HEIGHT = 720
 BACKGROUND_MARGIN_CELLS = 2
+KERB_COLOR = arcade.color.WHITE_SMOKE
+KERB_LINE_WIDTH = 10.0
+KERB_ARC_STEPS = 24  # smoother than the collision resolver's default — this is visual only
 
 
 def _heading_to_sprite_angle(heading: float) -> float:
     """`arcade.Sprite.angle` rotates clockwise from the texture's native orientation.
-    The car art's native (angle=0) nose points world-heading -90° (down) — empirically
-    confirmed by rendering it at a few angles and inspecting where the nose landed."""
-    return -90.0 - math.degrees(heading)
+    The car art's native (angle=0) nose points world-heading +90° (up) — confirmed by
+    actually driving it: the first cut had this 180° off and drove the car tail-first."""
+    return 90.0 - math.degrees(heading)
 
 
 class PlayWindow(arcade.Window):
@@ -41,6 +44,9 @@ class PlayWindow(arcade.Window):
         self.car_sprite.height = game.constants.car_length
 
         self.camera = arcade.Camera2D()
+        self.kerb_segments: list[Segment] = boundary_segments(
+            self.game.track, arc_steps=KERB_ARC_STEPS
+        )
 
         self._build_background()
         self._build_track()
@@ -61,21 +67,18 @@ class PlayWindow(arcade.Window):
                 self.background_sprites.append(sprite)
 
     def _build_track(self) -> None:
+        # One undirected, edge-to-edge asphalt fill per cell — no per-TileKind art or
+        # rotation needed, so this can't reintroduce either the seam or the wrong-corner
+        # bugs a rotated bitmap kerb had. Kerbs are drawn separately in on_draw from the
+        # same boundary geometry the collision resolver uses (see kerb_segments above).
         cell_size = self.game.track.cell_size
-        for cell, kind in self.game.track.cells.items():
-            resolved = self.manifest.resolve(kind)
+        for cell in self.game.track.cells:
             cx, cy = self.game.track.cell_center(cell)
-            for layer_path in resolved.paths:
-                sprite = arcade.Sprite(str(layer_path))
-                # Scale by width only, preserving aspect ratio — the vendored art isn't
-                # always an exact cell_size square (some tiles carry a little vertical
-                # bleed), and squashing it to force a square would visibly distort it.
-                scale = cell_size / sprite.width
-                sprite.width *= scale
-                sprite.height *= scale
-                sprite.center_x, sprite.center_y = cx, cy
-                sprite.angle = resolved.rotate_degrees
-                self.tile_sprites.append(sprite)
+            sprite = arcade.Sprite(str(self.manifest.surface))
+            sprite.width = cell_size
+            sprite.height = cell_size
+            sprite.center_x, sprite.center_y = cx, cy
+            self.tile_sprites.append(sprite)
 
     def _build_decor(self) -> None:
         cx, cy = self.game.track.cell_center(self.game.track.start_cell)
@@ -111,6 +114,8 @@ class PlayWindow(arcade.Window):
         with self.camera.activate():
             self.background_sprites.draw()
             self.tile_sprites.draw()
+            for (x1, y1), (x2, y2) in self.kerb_segments:
+                arcade.draw_line(x1, y1, x2, y2, KERB_COLOR, KERB_LINE_WIDTH)
             self.decor_sprites.draw()
             arcade.draw_sprite(self.car_sprite)
 
