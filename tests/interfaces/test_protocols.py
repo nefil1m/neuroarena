@@ -58,4 +58,4 @@ def test_training_update_is_frozen_and_defaults_schema_version():
     )
     assert u.schema_version == 1
     with pytest.raises(Exception):  # noqa: B017
-        u.progress_index = 2
+        u.progress_index = 2  # type: ignore[misc]

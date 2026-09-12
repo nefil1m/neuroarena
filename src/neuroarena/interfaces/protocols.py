@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import numpy as np
 
@@ -25,7 +25,7 @@ class Environment(Protocol):
 
     def reset(self, *, seed: int | None = None) -> Observation: ...
 
-    def step(self, action: Action) -> tuple[Observation, bool, bool, dict]: ...
+    def step(self, action: Action) -> tuple[Observation, bool, bool, dict[str, Any]]: ...
 
 
 @runtime_checkable
@@ -56,7 +56,7 @@ class Objective(Protocol):
         action: Action,
         terminated: bool,
         truncated: bool,
-        info: dict,
+        info: dict[str, Any],
     ) -> None: ...
 
     def should_stop(self) -> bool: ...

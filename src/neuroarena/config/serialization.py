@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+from typing import Any
 
 from neuroarena.config.run_config import SCHEMA_VERSION, RunConfig
 
@@ -10,7 +11,7 @@ class UnknownSchemaVersionError(ValueError):
     """Config declares a schema_version this build cannot read."""
 
 
-def migrate(raw: dict) -> dict:
+def migrate(raw: dict[str, Any]) -> dict[str, Any]:
     """Forward-migrate a decoded config dict toward SCHEMA_VERSION.
 
     Identity today (only v1 exists). The first `vN -> vN+1` step is added here

@@ -27,7 +27,7 @@ def test_discrete_equality_and_inequality():
 
 
 def test_box_never_equals_discrete():
-    assert Box(0.0, 1.0, (1,)) != Discrete(1)
+    assert Box(0.0, 1.0, (1,)) != Discrete(1)  # type: ignore[comparison-overlap]
 
 
 def test_box_repr_contains_type_and_shape():

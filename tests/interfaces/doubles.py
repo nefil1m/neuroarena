@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 
 from neuroarena.interfaces.spaces import Box, Space
@@ -18,7 +20,7 @@ class DummyEnvironment:
         self._t = 0
         return np.zeros(3, dtype=np.float32)
 
-    def step(self, action: np.ndarray) -> tuple[np.ndarray, bool, bool, dict]:
+    def step(self, action: np.ndarray) -> tuple[np.ndarray, bool, bool, dict[str, Any]]:
         self._t += 1
         return np.zeros(3, dtype=np.float32), False, self._t >= 5, {"t": self._t}
 
