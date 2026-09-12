@@ -72,6 +72,12 @@ def test_start_cell_must_be_in_track() -> None:
         Track(cells=_rounded_rectangle(), start_cell=(99, 99), start_facing=Facing.E)
 
 
+def test_start_facing_must_be_an_open_edge_of_start_cell() -> None:
+    # (1, 0) is STRAIGHT_EW (open edges {E, W}); Facing.N is not one of them.
+    with pytest.raises(TrackValidationError):
+        Track(cells=_rounded_rectangle(), start_cell=(1, 0), start_facing=Facing.N)
+
+
 def test_boundary_segments_count_matches_tile_mix() -> None:
     track = Track(cells=_rounded_rectangle(), start_cell=(1, 0), start_facing=Facing.E)
     segments = boundary_segments(track, arc_steps=8)

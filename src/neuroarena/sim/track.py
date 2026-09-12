@@ -128,6 +128,13 @@ def validate(track: Track) -> None:
         raise TrackValidationError("a 90°-turn-only closed loop needs at least 4 cells")
     if track.start_cell not in cells:
         raise TrackValidationError(f"start_cell {track.start_cell} is not part of the track")
+    start_kind = cells[track.start_cell]
+    if track.start_facing not in start_kind.open_edges:
+        raise TrackValidationError(
+            f"start_facing {track.start_facing.value} is not an open edge of start_cell "
+            f"{track.start_cell} ({start_kind.value}); open edges are "
+            f"{sorted(f.value for f in start_kind.open_edges)}"
+        )
 
     for cell, kind in cells.items():
         for facing in kind.open_edges:

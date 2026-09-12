@@ -57,11 +57,25 @@ def generate_track(
             f"always has an even tile count; try size={size - 1} or size={size + 1}"
         )
 
+    # Sample a per-attempt target closing length from the even integers in the drift window,
+    # rather than always handing `_walk_attempt` the window's top. The walk always prefers
+    # extending and only stops growing once capped by `max_length`, so passing the same global
+    # `max_length` to every attempt would make results cluster at the top of the window instead
+    # of spreading across it (a product decision: generated sizes should spread across the
+    # drift window, not cluster at its top). The fast-fail guard above already guarantees at
+    # least one even value exists here.
+    first_even = min_close_length if min_close_length % 2 == 0 else min_close_length + 1
+    even_target_lengths = list(range(first_even, max_length + 1, 2))
+
     for _ in range(max_attempts):
-        path = _walk_attempt(rng, min_close_length, max_length, complexity, step_budget)
+        attempt_max_length = rng.choice(even_target_lengths)
+        path = _walk_attempt(rng, min_close_length, attempt_max_length, complexity, step_budget)
         if path is not None:
             cells = _path_to_cells(path)
-            return Track(cells=cells, start_cell=path[0], start_facing=_direction(path[0], path[1]))
+            start_index = next((i for i, cell in enumerate(path) if not cells[cell].is_curve), 0)
+            start_cell = path[start_index]
+            start_facing = _direction(path[start_index], path[(start_index + 1) % len(path)])
+            return Track(cells=cells, start_cell=start_cell, start_facing=start_facing)
 
     raise TrackGenerationError(
         f"failed to close a loop within {min_close_length}-{max_length} tiles "

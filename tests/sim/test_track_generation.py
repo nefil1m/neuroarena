@@ -51,6 +51,42 @@ def test_rejects_out_of_range_complexity() -> None:
         generate_track(size=12, complexity=1.5, seed=1)
 
 
+def test_sizes_spread_across_drift_window_not_clustered_at_top() -> None:
+    # Before the per-attempt sampling fix, the walk always saturated at the largest reachable
+    # even value <= max_length, so every seed produced the same (top-of-window) tile count.
+    # Now each attempt samples its own target, so tile counts should show real spread.
+    for size in (14, 20, 40):
+        counts = {
+            len(generate_track(size=size, complexity=0.5, seed=seed).cells) for seed in range(20)
+        }
+        assert len(counts) > 1, f"size={size} produced a single clustered count: {counts}"
+
+
+def test_same_seed_still_deterministic_with_per_attempt_sampling() -> None:
+    a = generate_track(size=14, complexity=0.5, seed=7)
+    b = generate_track(size=14, complexity=0.5, seed=7)
+    assert a.cells == b.cells
+    assert a.start_cell == b.start_cell
+    assert a.start_facing == b.start_facing
+
+
+def test_start_cell_is_never_a_curve_when_a_straight_tile_exists() -> None:
+    for size, seed in [(12, 1), (16, 2), (20, 3), (24, 4), (30, 5), (40, 6)]:
+        track = generate_track(size=size, complexity=0.5, seed=seed)
+        start_kind = track.cells[track.start_cell]
+        assert not start_kind.is_curve, (
+            f"size={size} seed={seed} started on a curve tile {start_kind}"
+        )
+
+
+def test_minimum_size_track_is_valid_even_with_all_curve_fallback() -> None:
+    # A 4-cell loop is a 2x2 block of curve tiles — no straight tile exists, so start_cell
+    # must fall back to path[0] (a curve). This should still produce a valid Track.
+    track = generate_track(size=4, complexity=0.5, seed=1)
+    assert len(track.cells) == 4
+    assert track.cells[track.start_cell].is_curve  # confirms the fallback path was exercised
+
+
 def test_rejects_size_with_no_even_tile_count_in_drift_window() -> None:
     # size=5's ±15% drift window collapses to the single value [5, 5], and a 90°-only closed
     # loop always has an even tile count (the grid graph is bipartite by (x+y) parity, so

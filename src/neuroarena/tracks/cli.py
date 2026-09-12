@@ -8,11 +8,6 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-import arcade
-
-from neuroarena.render.manifest import AssetManifest
-from neuroarena.render.window import PlayWindow
-from neuroarena.sim.game import Game
 from neuroarena.sim.track_generation import generate_track
 from neuroarena.tracks.store import DEFAULT_TRACKS_DIR, TrackRecord, save
 
@@ -45,6 +40,12 @@ def main() -> None:
     )
 
     if args.preview:
+        import arcade
+
+        from neuroarena.render.manifest import AssetManifest
+        from neuroarena.render.window import PlayWindow
+        from neuroarena.sim.game import Game
+
         game = Game(record.track)
         manifest = AssetManifest.load(MANIFEST_PATH)
         PlayWindow(game, manifest)
