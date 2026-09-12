@@ -22,7 +22,15 @@ Settled through the 2026-09-12 Phase 2 exploration pass (carried over 2026-09-09
 None remaining at the requirements level — see Revision history for how the generation algorithm, complexity mapping, self-intersection avoidance, size-drift tolerance, map storage, and the generation control surface were resolved. Implementation-level details (exact retry-attempt budget, manifest file layout, CLI flag names) are left to the Implementation plan.
 
 ## Implementation plan
-_Not yet written._
+Detailed, step-by-step plan: [`../superpowers/plans/2026-09-12-phase-2-track-generation.md`](../superpowers/plans/2026-09-12-phase-2-track-generation.md).
+
+Four tasks, each ending in an independently testable, committed deliverable:
+1. **`tile_kind_for_open_edges`** — the inverse lookup (open-edge pair → `TileKind`) the generator needs, added to Phase 1's `track.py`.
+2. **`generate_track`** — self-avoiding random walk with `complexity`-biased turns, backtracking, and retry-until-valid loop closure within the ±15% size-drift tolerance.
+3. **Map storage** — `TrackRecord`, `track_id`, a JSON file per map under `tracks_dir`, and a manifest for enumeration — plain files, not SQLite.
+4. **CLI** (`neuroarena-track-gen`) — generate, save, and optionally preview by reusing Phase 1's `Game`/`PlayWindow`/`AssetManifest` renderer unmodified.
+
+Nothing in `sim/game.py`, `sim/physics.py`, or the renderer changes — this phase only adds a new source of `Track` objects and a way to store/retrieve them.
 
 ## Revision history
 - 2026-09-09 — Stub created
@@ -31,3 +39,4 @@ _Not yet written._
 - 2026-09-12 — Resolved all three requirements-level open questions from a dedicated exploration pass. **Algorithm:** self-avoiding random walk (never revisits a cell, so self-intersection is prevented by construction) with a `complexity`-driven turn-frequency bias and retry-until-valid loop closure, chosen over a template/piece-based approach because it needs no authored chunk library and keeps `complexity` as path-shape rather than chunk-selection. **Units:** `size` is target tile count (world footprint follows from `cell_size × count`, not an independent parameter); `complexity` is turn probability per step. **Drift tolerance:** requested size is accepted within ±15% of actual, a deliberate looseness so generation doesn't need excessive retries at hard-to-hit exact lengths; sizes below the 4-tile minimum closed loop are rejected.
 - 2026-09-12 — Added map-management scope that the doc previously lacked entirely: (1) **map identity/storage** — each map gets a `track_id` and is written as its own JSON file (Phase 1's format plus generation metadata) under a `tracks/` directory with a lightweight manifest, deliberately plain files rather than SQLite since Phase 6 (which owns SQLite) is implemented after Phase 2 in build order — Phase 6 will reference these files by `track_id`, not duplicate their storage; (2) **a CLI generation control surface** for this phase (generate/preview/save), rather than a browser UI, since Phase 7's dashboard backend doesn't exist yet at this point in build order — Phase 9's already-reserved track editor becomes a thin UI wrapping this same generation function later. Prompted by a request for map-generation settings/controls (new-map button, size slider, storage, a pointer from a trained model back to its map) with no game art available for the controls themselves. Propagated: Phase 5 gains a track-selection config knob, Phase 6 gains a track-reference requirement, Phase 9's track-editor bullet is annotated as wrapping this phase's generator rather than redesigning it.
 - 2026-09-12 — Promoted from DRAFT to FINALIZED. All prior open questions are resolved and the new map-management scope (identity, storage, drift tolerance, control surface) is settled with no requirements-level questions remaining. Unlocks writing the Implementation plan next.
+- 2026-09-12 — Wrote the implementation plan (`../superpowers/plans/2026-09-12-phase-2-track-generation.md`): four tasks — a `tile_kind_for_open_edges` lookup added to Phase 1's `track.py`, the self-avoiding-walk generator, file-based map storage with a manifest, and a CLI (`neuroarena-track-gen`) tying generation/storage/Phase 1's existing renderer together. No changes needed to `sim/game.py`, `sim/physics.py`, or the renderer's drawing code.
