@@ -758,7 +758,7 @@ def test_sim_does_not_import_forbidden_dependencies():
 
 - [ ] **Step 6: Run the full test suite, typecheck, and lint**
 
-Run: `uv run pytest -v && uv run mypy && uv run ruff check . && uv run ruff format --check .`
+Run: `uv run pytest -v && uv run mypy src tests && uv run ruff check . && uv run ruff format --check .`
 Expected: all clean
 
 - [ ] **Step 7: Commit**
