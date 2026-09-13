@@ -7,6 +7,7 @@ and why a force-truncated genome is scored on partial progress rather than penal
 from __future__ import annotations
 
 import pickle
+import random
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -110,9 +111,20 @@ class NeatTrainer:
         return update
 
     def save_checkpoint(self, path: Path) -> None:
-        # Task 7. Declared here (rather than left off the class) so `NeatTrainer`
-        # structurally satisfies the runtime_checkable `Trainer` protocol now.
-        raise NotImplementedError("NeatTrainer checkpointing lands in Task 7")
+        """Pickles the NEAT-specific state (Phase 4 doc: "population, genomes, innovation
+        history"), plus Python's global `random` state so a resumed run's mutation/crossover
+        draws continue the same sequence rather than silently diverging. Checkpoint file
+        format/retention is Phase 6's concern; this is a working save/load pair, not a claim
+        on the eventual platform format."""
+        payload = {
+            "schema_version": _CHECKPOINT_SCHEMA_VERSION,
+            "neat_config": self._neat_config,
+            "population": self._population.population,
+            "species": self._population.species,
+            "generation": self._generation,
+            "random_state": random.getstate(),
+        }
+        path.write_bytes(pickle.dumps(payload))
 
     @classmethod
     def load_checkpoint(
@@ -122,9 +134,27 @@ class NeatTrainer:
         objective: Objective,
         config: RunConfig,
     ) -> NeatTrainer:
-        # Task 7. Declared here (rather than left off the class) so `NeatTrainer`
-        # structurally satisfies the runtime_checkable `Trainer` protocol now.
-        raise NotImplementedError("NeatTrainer checkpointing lands in Task 7")
+        # Checkpoints are produced by `save_checkpoint` above and read back on the same
+        # trusted local filesystem (this backend has no notion of loading a checkpoint from
+        # an untrusted/remote source) — pickle is used because NEAT genomes/species/config
+        # objects aren't trivially JSON-serializable, matching the existing champion-genome
+        # pickling in `_run_one_generation`.
+        payload = pickle.loads(path.read_bytes())
+        version = payload.get("schema_version")
+        if version != _CHECKPOINT_SCHEMA_VERSION:
+            raise ValueError(
+                f"unreadable NEAT checkpoint schema_version {version!r} "
+                f"(supports {_CHECKPOINT_SCHEMA_VERSION})"
+            )
+        random.setstate(payload["random_state"])
+        neat_config = payload["neat_config"]
+        trainer = cls(make_env, objective, config, neat_config=neat_config)
+        trainer._population = neat.Population(
+            neat_config,
+            initial_state=(payload["population"], payload["species"], payload["generation"]),
+        )
+        trainer._generation = payload["generation"]
+        return trainer
 
 
 class _ChampionTracker:

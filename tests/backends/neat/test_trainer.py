@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from neuroarena.backends.neat.trainer import NeatTrainer
 from neuroarena.config import RunConfig
 from neuroarena.interfaces.protocols import Trainer, TrainingUpdate
@@ -48,3 +50,28 @@ def test_champion_dir_saves_one_genome_file_per_generation(tmp_path: Path) -> No
     next(run)
     saved = sorted(p.name for p in champion_dir.iterdir())
     assert saved == ["gen_00000.pkl", "gen_00001.pkl"]
+
+
+def test_checkpoint_round_trip_resumes_generation_count(tmp_path: Path) -> None:
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    run = trainer.run()
+    next(run)
+    next(run)
+    checkpoint_path = tmp_path / "checkpoint.pkl"
+    trainer.save_checkpoint(checkpoint_path)
+
+    restored = NeatTrainer.load_checkpoint(
+        checkpoint_path, DummyEnvironment, DummyObjective(), RunConfig()
+    )
+    restored_update = next(restored.run())
+    assert restored_update.progress_index == 2  # continues from generation 2, not 0
+    assert restored_update.population_size == 5
+
+
+def test_checkpoint_rejects_unknown_schema_version(tmp_path: Path) -> None:
+    import pickle
+
+    path = tmp_path / "bad.pkl"
+    path.write_bytes(pickle.dumps({"schema_version": 999}))
+    with pytest.raises(ValueError, match="schema_version"):
+        NeatTrainer.load_checkpoint(path, DummyEnvironment, DummyObjective(), RunConfig())
