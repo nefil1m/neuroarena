@@ -69,3 +69,13 @@ versioned JSON codec.
 ```bash
 uv run python examples/quickstart.py
 ```
+
+## Training
+
+`neuroarena-train` (Phase 6) launches a real NEAT training run against a saved track (generate one first with `neuroarena-track-gen`) and persists its progress — run history, checkpoints, and settings history — to a local SQLite database plus a `data/checkpoints/` directory:
+
+```bash
+uv run neuroarena-train --track-id <id-from-track-gen> --population-size 150
+```
+
+Resume a model's training later, inheriting its most recent settings, with `--resume <model_id>` (printed by the command above).
