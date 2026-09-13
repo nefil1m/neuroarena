@@ -176,7 +176,16 @@ def _apply_hyperparameter_overrides(
             continue
         for attr in _SUBCONFIG_ATTRS:
             subconfig = getattr(config, attr)
-            if hasattr(subconfig, key):
+            # `subconfig._params` is neat-python's own list of `ConfigParameter`s declared
+            # for this sub-config — exactly the user-facing hyperparameters it exposes via
+            # its config-file section. Checking membership here (rather than `hasattr`,
+            # which is true for ANY attribute or method, including internal id-allocator
+            # state like `node_indexer` and bound methods like `save`) is what keeps this
+            # override path from reaching into neat-python's internal bookkeeping — the
+            # exact class of state-corruption bug Phase 4's checkpoint-resume fix wave
+            # already found once in this library (see the Phase 5 doc's Open Questions).
+            declared_params = {p.name for p in subconfig._params}
+            if key in declared_params:
                 setattr(subconfig, key, value)
                 break
         else:

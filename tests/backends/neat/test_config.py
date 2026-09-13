@@ -108,3 +108,28 @@ def test_reserved_key_override_raises() -> None:
 def test_no_overrides_behaves_exactly_as_before() -> None:
     config = build_neat_config(Box(-1.0, 1.0, (10,)), Box(-1.0, 1.0, (2,)), population_size=25)
     assert config.pop_size == 25
+
+
+def test_internal_id_allocator_override_is_rejected() -> None:
+    # `node_indexer` is neat-python's own internal node-key allocator, not a declared
+    # hyperparameter — a naive `hasattr` check would accept it (and corrupt structural
+    # mutation's id bookkeeping); it must be rejected the same way an unknown key is.
+    with pytest.raises(ValueError, match="unknown NEAT hyperparameter"):
+        build_neat_config(
+            Box(-1.0, 1.0, (10,)),
+            Box(-1.0, 1.0, (2,)),
+            population_size=25,
+            hyperparameter_overrides={"node_indexer": 99},
+        )
+
+
+def test_internal_method_override_is_rejected() -> None:
+    # `save` is a bound method on `neat.Config`, not a hyperparameter — a naive `hasattr`
+    # check would accept it and silently clobber the method with a non-callable value.
+    with pytest.raises(ValueError, match="unknown NEAT hyperparameter"):
+        build_neat_config(
+            Box(-1.0, 1.0, (10,)),
+            Box(-1.0, 1.0, (2,)),
+            population_size=25,
+            hyperparameter_overrides={"save": 1},
+        )
