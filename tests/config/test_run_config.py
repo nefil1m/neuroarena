@@ -22,3 +22,39 @@ def test_max_generation_steps_default() -> None:
 
 def test_max_generation_steps_is_settable() -> None:
     assert RunConfig(max_generation_steps=1000).max_generation_steps == 1000
+
+
+def test_population_size_default() -> None:
+    assert RunConfig().population_size == 150
+
+
+def test_track_id_defaults_to_none() -> None:
+    assert RunConfig().track_id is None
+
+
+def test_track_id_is_settable() -> None:
+    assert RunConfig(track_id="abc123").track_id == "abc123"
+
+
+def test_headless_defaults_to_true() -> None:
+    assert RunConfig().headless is True
+
+
+def test_sim_speed_default() -> None:
+    assert RunConfig().sim_speed == 1.0
+
+
+def test_max_episode_steps_default() -> None:
+    assert RunConfig().max_episode_steps == 3000
+
+
+def test_max_generations_and_target_fitness_default_to_none() -> None:
+    config = RunConfig()
+    assert config.max_generations is None
+    assert config.target_fitness is None
+
+
+def test_max_generations_and_target_fitness_are_settable() -> None:
+    config = RunConfig(max_generations=50, target_fitness=1000.0)
+    assert config.max_generations == 50
+    assert config.target_fitness == 1000.0
