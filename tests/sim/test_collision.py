@@ -1,6 +1,8 @@
 import math
 
-from neuroarena.sim.collision import resolve_collision
+import pytest
+
+from neuroarena.sim.collision import distance_to_boundary, resolve_collision
 from neuroarena.sim.physics import CarState
 
 WALL = ((-100.0, 0.0), (100.0, 0.0))
@@ -49,3 +51,17 @@ def test_moving_away_from_an_overlapped_wall_keeps_its_speed() -> None:
     result = resolve_collision(state, previous, [WALL], RADIUS)
     assert result.speed == 50.0
     assert math.isclose(result.y, RADIUS)
+
+
+def test_distance_to_boundary_zero_when_on_the_wall() -> None:
+    assert distance_to_boundary((0.0, 0.0), [WALL]) == pytest.approx(0.0)
+
+
+def test_distance_to_boundary_positive_when_clear() -> None:
+    assert distance_to_boundary((0.0, 50.0), [WALL]) == pytest.approx(50.0)
+
+
+def test_distance_to_boundary_is_the_nearest_of_several_segments() -> None:
+    near = ((-10.0, 10.0), (10.0, 10.0))
+    far = ((-10.0, 100.0), (10.0, 100.0))
+    assert distance_to_boundary((0.0, 0.0), [far, near]) == pytest.approx(10.0)

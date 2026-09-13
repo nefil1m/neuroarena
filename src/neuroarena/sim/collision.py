@@ -80,3 +80,14 @@ def _closest_point_on_segment(point: Point, segment: Segment) -> Point:
     t = ((point[0] - ax) * abx + (point[1] - ay) * aby) / length_sq
     t = max(0.0, min(1.0, t))
     return (ax + t * abx, ay + t * aby)
+
+
+def distance_to_boundary(point: Point, boundary: list[Segment]) -> float:
+    """Shortest distance from `point` to any segment in `boundary`. `resolve_collision`
+    clamps a colliding car to exactly `car_radius` from the wall it hit, so comparing this
+    against `car_radius` after a tick tells Phase 3's `CarEnvironment` whether that tick's
+    `resolve_collision` call actually pushed the car back — i.e. whether it crashed."""
+    return min(
+        math.hypot(point[0] - closest[0], point[1] - closest[1])
+        for closest in (_closest_point_on_segment(point, segment) for segment in boundary)
+    )
