@@ -105,3 +105,42 @@ def test_delete_checkpoint_removes_the_row(tmp_path: Path) -> None:
     )
     delete_checkpoint(conn, record.checkpoint_id)
     assert list_checkpoints(conn, model_id, kind="champion") == []
+
+
+def test_same_generation_checkpoints_are_ordered_by_created_at(tmp_path: Path) -> None:
+    # A resume from an older-than-latest checkpoint replays generations, so two rows can
+    # share a `generation`. `checkpoints` has no autoincrement id (its PK is an unordered
+    # UUID), so `created_at` is the tiebreaker — the created_at values here are rewritten
+    # to a known order that is the *reverse* of the insertion order, so a query relying on
+    # SQLite's arbitrary row order would fail this test.
+    conn = connect(tmp_path / "test.db")
+    model_id, run_id = _setup(conn)
+    inserted_first, inserted_second = (
+        record_checkpoint(
+            conn,
+            model_id=model_id,
+            run_id=run_id,
+            kind="resume",
+            generation=4,
+            file_path=tmp_path / f"{label}.pkl",
+        )
+        for label in ("a", "b")
+    )
+    for record, created_at in (
+        (inserted_first, "2026-01-01T00:00:02+00:00"),  # chronologically *later*
+        (inserted_second, "2026-01-01T00:00:01+00:00"),  # chronologically *earlier*
+    ):
+        conn.execute(
+            "UPDATE checkpoints SET created_at = ? WHERE checkpoint_id = ?",
+            (created_at, record.checkpoint_id),
+        )
+    conn.commit()
+
+    listed = list_checkpoints(conn, model_id, kind="resume")
+    assert [r.checkpoint_id for r in listed] == [
+        inserted_second.checkpoint_id,  # earlier created_at first, despite inserting second
+        inserted_first.checkpoint_id,
+    ]
+    latest = latest_checkpoint(conn, model_id, kind="resume")
+    assert latest is not None
+    assert latest.checkpoint_id == inserted_first.checkpoint_id  # newest created_at of the tie

@@ -60,3 +60,27 @@ def test_list_is_ordered_by_generation(tmp_path: Path) -> None:
         )
         record_generation_stat(conn, model_id=model_id, run_id=run_id, update=update)
     assert [r.generation for r in list_generation_stats_for_model(conn, model_id)] == [0, 1, 2]
+
+
+def test_rows_at_the_same_generation_come_back_in_insertion_order(tmp_path: Path) -> None:
+    # A resume from an older-than-latest checkpoint replays generations that already have
+    # rows; without `id` as the ORDER BY tiebreaker their relative order is arbitrary.
+    conn = connect(tmp_path / "test.db")
+    model_id, run_id = _setup(conn)
+    for best_fitness in (1.0, 2.0):
+        record_generation_stat(
+            conn,
+            model_id=model_id,
+            run_id=run_id,
+            update=TrainingUpdate(
+                progress_index=7,
+                best_fitness=best_fitness,
+                mean_fitness=0.0,
+                worst_fitness=0.0,
+                population_size=1,
+                champion_metrics={},
+                sim_time=0.0,
+                wall_time=0.0,
+            ),
+        )
+    assert [r.best_fitness for r in list_generation_stats_for_model(conn, model_id)] == [1.0, 2.0]

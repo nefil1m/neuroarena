@@ -72,13 +72,18 @@ def record_checkpoint(
 def list_checkpoints(
     conn: sqlite3.Connection, model_id: str, kind: str | None = None
 ) -> list[CheckpointRecord]:
+    # `created_at` breaks generation ties deterministically (this table's PK is an
+    # unordered UUID, so there is no autoincrement `id` to fall back on): a resume from an
+    # older-than-latest checkpoint replays generations that already have rows.
     if kind is None:
         rows = conn.execute(
-            "SELECT * FROM checkpoints WHERE model_id = ? ORDER BY generation", (model_id,)
+            "SELECT * FROM checkpoints WHERE model_id = ? ORDER BY generation, created_at",
+            (model_id,),
         ).fetchall()
     else:
         rows = conn.execute(
-            "SELECT * FROM checkpoints WHERE model_id = ? AND kind = ? ORDER BY generation",
+            "SELECT * FROM checkpoints WHERE model_id = ? AND kind = ?"
+            " ORDER BY generation, created_at",
             (model_id, kind),
         ).fetchall()
     return [_record_from_row(row) for row in rows]
@@ -89,7 +94,7 @@ def latest_checkpoint(
 ) -> CheckpointRecord | None:
     row = conn.execute(
         "SELECT * FROM checkpoints WHERE model_id = ? AND kind = ?"
-        " ORDER BY generation DESC LIMIT 1",
+        " ORDER BY generation DESC, created_at DESC LIMIT 1",
         (model_id, kind),
     ).fetchone()
     return None if row is None else _record_from_row(row)

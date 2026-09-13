@@ -72,3 +72,27 @@ def test_reconstruct_run_config_replays_diffs_forward(tmp_path: Path) -> None:
     assert (
         reconstructed.max_episode_steps == RunConfig().max_episode_steps
     )  # untouched field survives
+
+
+def test_entries_at_the_same_generation_replay_in_insertion_order(tmp_path: Path) -> None:
+    # Two settings changes can land on the same generation (e.g. a resume from an
+    # older-than-latest checkpoint replaying it). Without `id` as the ORDER BY tiebreaker
+    # SQLite may hand them back in either order, silently letting the earlier-intended
+    # values win the replay.
+    conn = connect(tmp_path / "test.db")
+    model_id, run_id = _setup(conn)
+    first = RunConfig(population_size=100)
+    record_settings_entry(
+        conn, model_id=model_id, run_id=run_id, generation=5, diff=compute_diff(None, first)
+    )
+    record_settings_entry(
+        conn,
+        model_id=model_id,
+        run_id=run_id,
+        generation=5,  # same generation as the entry above
+        diff=compute_diff(first, RunConfig(population_size=200)),
+    )
+
+    entries = list_settings_history_for_model(conn, model_id)
+    assert [e.diff["population_size"] for e in entries] == [100, 200]  # insertion order
+    assert reconstruct_run_config(conn, model_id).population_size == 200  # the later one wins

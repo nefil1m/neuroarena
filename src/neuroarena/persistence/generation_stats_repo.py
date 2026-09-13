@@ -53,7 +53,10 @@ def list_generation_stats_for_model(
     conn: sqlite3.Connection, model_id: str
 ) -> list[GenerationStatRecord]:
     rows = conn.execute(
-        "SELECT * FROM generation_stats WHERE model_id = ? ORDER BY generation", (model_id,)
+        # `id` breaks generation ties deterministically — a resume from an older-than-latest
+        # checkpoint replays generations that already have rows.
+        "SELECT * FROM generation_stats WHERE model_id = ? ORDER BY generation, id",
+        (model_id,),
     ).fetchall()
     return [
         GenerationStatRecord(

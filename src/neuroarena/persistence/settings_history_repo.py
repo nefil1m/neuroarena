@@ -59,7 +59,11 @@ def list_settings_history_for_model(
     conn: sqlite3.Connection, model_id: str
 ) -> list[SettingsHistoryEntry]:
     rows = conn.execute(
-        "SELECT * FROM settings_history WHERE model_id = ? ORDER BY generation", (model_id,)
+        # `id` breaks generation ties deterministically: two entries can share a generation
+        # (e.g. a resume from an older-than-latest checkpoint replaying it), and replaying
+        # them out of insertion order would corrupt `reconstruct_run_config`.
+        "SELECT * FROM settings_history WHERE model_id = ? ORDER BY generation, id",
+        (model_id,),
     ).fetchall()
     return [
         SettingsHistoryEntry(
@@ -74,9 +78,10 @@ def list_settings_history_for_model(
 
 
 def reconstruct_run_config(conn: sqlite3.Connection, model_id: str) -> RunConfig:
-    merged: dict[str, Any] = {}
-    for entry in list_settings_history_for_model(conn, model_id):
-        merged.update(entry.diff)
-    if not merged:
+    entries = list_settings_history_for_model(conn, model_id)
+    if not entries:
         return RunConfig()
+    merged: dict[str, Any] = {}
+    for entry in entries:
+        merged.update(entry.diff)
     return config_loads(json.dumps(merged))
