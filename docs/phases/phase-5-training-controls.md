@@ -25,7 +25,18 @@ Settled through the 2026-09-13 Phase 5 exploration pass (carried over 2026-09-09
 None remaining at the requirements level — see Revision history for how each item was resolved. Implementation-level details are left to the Implementation plan: the exact `RunConfig` field names for the two new run-level stop knobs and where `NeatTrainer.run()` checks them; the exact `neat-python` config parameters to expose and their `RunConfig` field names; and the mechanism for safely changing `neat.Config` hyperparameters between generations without corrupting `neat-python`'s internal state (id allocators, species bookkeeping) — the kind of state-corruption bug Phase 4's checkpoint-resume fix wave already found once in this same library, so this needs the same care.
 
 ## Implementation plan
-_Not yet written._
+Detailed, step-by-step plan: [`../superpowers/plans/2026-09-13-phase-5-training-controls.md`](../superpowers/plans/2026-09-13-phase-5-training-controls.md).
+
+Seven tasks, each ending in an independently testable, committed deliverable:
+1. **Plain scalar `RunConfig` knobs** — `population_size`, `track_id`, `headless`, `sim_speed`, `max_episode_steps`, `max_generations`, `target_fitness`.
+2. **Nested-dataclass `RunConfig` knobs** (`sensor_config`, `physics_constants`) — plus a real fix to `config/serialization.py`'s `loads()`, which would otherwise silently leave them as plain dicts on a round trip.
+3. **`neat_hyperparameters` knob** + a hyperparameter-override mechanism in `build_neat_config` (`backends/neat/config.py`).
+4. **`NeatTrainer` wiring** for `population_size`/`neat_hyperparameters`.
+5. **`CarEnvironmentConfig.from_run_config`** (`sim/car_env.py`) — wires `sensor_config`/`physics_constants`/`max_episode_steps`.
+6. **Run-level automatic stop** (`max_generations`, `target_fitness`) in `NeatTrainer.run()`.
+7. **End-to-end integration test** on the real `CarEnvironment`, exercising several knobs together.
+
+Deliberately not built by this plan: resolving `RunConfig.track_id` into a live `Track`/`make_env` closure (no phase doc has named a training-launch entrypoint yet), a consumer for `sim_speed`/`headless`, and any mechanism for changing a knob on a `NeatTrainer` that is already mid-`run()` (the "live-changeable" classification above describes what a future control surface may request; Phase 7's dashboard is that surface and doesn't exist yet). See the plan's own header for the full reasoning.
 
 ## Revision history
 - 2026-09-09 — Stub created.
