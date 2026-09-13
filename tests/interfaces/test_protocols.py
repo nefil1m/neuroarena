@@ -8,7 +8,7 @@ from neuroarena.interfaces import (
     Trainer,
     TrainingUpdate,
 )
-from tests.interfaces.doubles import DummyEnvironment, DummyModel
+from tests.interfaces.doubles import DummyEnvironment, DummyModel, DummyObjective
 
 
 def test_dummy_environment_satisfies_environment_protocol():
@@ -59,3 +59,25 @@ def test_training_update_is_frozen_and_defaults_schema_version():
     assert u.schema_version == 1
     with pytest.raises(Exception):  # noqa: B017
         u.progress_index = 2  # type: ignore[misc]
+
+
+def test_dummy_objective_satisfies_the_objective_protocol() -> None:
+    obj = DummyObjective()
+    assert isinstance(obj, Objective)
+
+
+def test_dummy_objective_fitness_counts_steps() -> None:
+    obj = DummyObjective()
+    obj.reset()
+    for _ in range(3):
+        obj.update(np.zeros(3, dtype=np.float32), np.zeros(2, dtype=np.float32), False, False, {})
+    assert obj.fitness() == 3.0
+    assert obj.should_stop() is False
+
+
+def test_dummy_objective_resets_between_episodes() -> None:
+    obj = DummyObjective()
+    obj.reset()
+    obj.update(np.zeros(3, dtype=np.float32), np.zeros(2, dtype=np.float32), False, False, {})
+    obj.reset()
+    assert obj.fitness() == 0.0

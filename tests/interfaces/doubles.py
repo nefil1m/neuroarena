@@ -38,3 +38,33 @@ class DummyModel:
     def act(self, observation: np.ndarray) -> np.ndarray:
         shape = self.action_space.shape  # type: ignore[union-attr]
         return np.zeros(shape, dtype=np.float32)
+
+
+class DummyObjective:
+    """Minimal Objective double: fitness = number of `update()` calls (steps survived).
+    Never signals should_stop() — episodes only end via the env's own terminated/truncated."""
+
+    def __init__(self) -> None:
+        self._steps = 0
+
+    def reset(self) -> None:
+        self._steps = 0
+
+    def update(
+        self,
+        observation: np.ndarray,
+        action: np.ndarray,
+        terminated: bool,
+        truncated: bool,
+        info: dict[str, Any],
+    ) -> None:
+        self._steps += 1
+
+    def should_stop(self) -> bool:
+        return False
+
+    def step_reward(self) -> float:
+        return 1.0
+
+    def fitness(self) -> float:
+        return float(self._steps)
