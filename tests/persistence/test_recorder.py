@@ -5,12 +5,12 @@ import pytest
 
 from neuroarena.interfaces.protocols import TrainingUpdate
 from neuroarena.interfaces.spaces import Box
-from neuroarena.persistence.checkpoints_repo import list_checkpoints
+from neuroarena.persistence.checkpoints_repo import list_checkpoints, record_checkpoint
 from neuroarena.persistence.db import connect
 from neuroarena.persistence.generation_stats_repo import list_generation_stats_for_model
 from neuroarena.persistence.models_repo import create_model
 from neuroarena.persistence.recorder import run_and_record
-from neuroarena.persistence.runs_repo import get_run
+from neuroarena.persistence.runs_repo import create_run, get_run
 
 
 class _FakeTrainer:
@@ -69,6 +69,30 @@ class _CrashingTrainer:
         raise NotImplementedError  # unused by the recorder; present only for Trainer conformance
 
 
+class _InterruptedTrainer:
+    """Stands in for a human hitting Ctrl-C partway through a headless run."""
+
+    def run(self) -> Iterator[TrainingUpdate]:
+        yield TrainingUpdate(
+            progress_index=0,
+            best_fitness=1.0,
+            mean_fitness=1.0,
+            worst_fitness=1.0,
+            population_size=1,
+            champion_metrics={},
+            sim_time=0.0,
+            wall_time=0.0,
+        )
+        raise KeyboardInterrupt
+
+    def save_checkpoint(self, path: Path) -> None:
+        pass
+
+    @classmethod
+    def load_checkpoint(cls, path, make_env, objective, config):
+        raise NotImplementedError  # unused by the recorder; present only for Trainer conformance
+
+
 def _model_id(conn) -> str:  # type: ignore[no-untyped-def]
     return create_model(
         conn,
@@ -114,6 +138,35 @@ def test_marks_run_completed_on_normal_exit(tmp_path: Path) -> None:
         initial_settings_diff={},
     )
     assert get_run(conn, record.run_id).status == "completed"
+    # the *returned* record reflects the final state too — `update_run_status` writes the DB
+    # but cannot mutate the frozen dataclass `create_run` handed back at the start
+    assert record.status == "completed"
+    assert record.ended_at is not None
+
+
+def test_marks_run_stopped_on_keyboard_interrupt(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "test.db")
+    model_id = _model_id(conn)
+    trainer = _InterruptedTrainer()
+    with pytest.raises(KeyboardInterrupt):  # Ctrl-C still propagates to the caller
+        run_and_record(
+            conn,
+            trainer,
+            model_id=model_id,
+            track_id="t1",
+            starting_generation=0,
+            resume_dir=tmp_path / "resume",
+            champion_dir=None,
+            checkpoint_every_n_generations=100,
+            champion_retention_cap=None,
+            initial_settings_diff={},
+        )
+    from neuroarena.persistence.runs_repo import list_runs_for_model
+
+    run_rows = list_runs_for_model(conn, model_id)
+    assert len(run_rows) == 1
+    assert run_rows[0].status == "stopped"  # not left at "running" forever
+    assert run_rows[0].ended_at is not None
 
 
 def test_marks_run_crashed_on_exception(tmp_path: Path) -> None:
@@ -212,6 +265,47 @@ def test_prunes_champion_checkpoints_beyond_the_retention_cap(tmp_path: Path) ->
     assert [r.generation for r in champions] == [3, 4]  # only the newest 2 survive
     assert not (champion_dir / "gen_00000.pkl").is_file()  # pruned files are actually deleted
     assert (champion_dir / "gen_00004.pkl").is_file()
+
+
+def test_pruning_keeps_a_file_a_surviving_row_still_references(tmp_path: Path) -> None:
+    # Resuming from an older-than-latest checkpoint replays generations, so a second
+    # champion row can point at the *same* file as an earlier row. Pruning the earlier row
+    # must not unlink a file the surviving duplicate still references.
+    conn = connect(tmp_path / "test.db")
+    model_id = _model_id(conn)
+    champion_dir = tmp_path / "champion"
+    champion_dir.mkdir()
+    shared_path = champion_dir / "gen_00000.pkl"
+    shared_path.write_bytes(b"champion")
+
+    previous_run = create_run(conn, model_id=model_id, track_id="t1", starting_generation=0)
+    stale = record_checkpoint(
+        conn,
+        model_id=model_id,
+        run_id=previous_run.run_id,
+        kind="champion",
+        generation=0,
+        file_path=shared_path,
+    )
+
+    trainer = _FakeTrainer(n_generations=2, champion_dir=champion_dir)  # replays gens 0 and 1
+    run_and_record(
+        conn,
+        trainer,
+        model_id=model_id,
+        track_id="t1",
+        starting_generation=0,
+        resume_dir=tmp_path / "resume",
+        champion_dir=champion_dir,
+        checkpoint_every_n_generations=100,
+        champion_retention_cap=2,
+        initial_settings_diff={},
+    )
+
+    champions = list_checkpoints(conn, model_id, kind="champion")
+    assert stale.checkpoint_id not in {c.checkpoint_id for c in champions}  # the old row is gone
+    assert [c.generation for c in champions] == [0, 1]  # the replayed duplicate survived
+    assert shared_path.is_file()  # ...and its file was NOT deleted out from under it
 
 
 def test_records_the_initial_settings_diff_at_starting_generation(tmp_path: Path) -> None:

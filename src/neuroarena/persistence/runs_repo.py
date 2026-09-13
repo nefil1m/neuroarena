@@ -2,9 +2,9 @@
 one contiguous segment of `generation_stats`. See
 `../../../docs/phases/phase-6-persistence.md`'s "Entity model" section — a model has many
 runs. `status` values this codebase produces: `"running"` (set by `create_run`),
-`"completed"` (the recorder's normal exit) and `"crashed"` (an unhandled exception mid-run).
-`"stopped"` is reserved for a future manual-stop control surface (Phase 7) — nothing in
-this plan sets it."""
+`"completed"` (the recorder's normal exit), `"crashed"` (an unhandled exception mid-run) and
+`"stopped"` (the recorder's `KeyboardInterrupt` handler — Ctrl-C on a headless CLI run; a
+future manual-stop control surface in Phase 7 sets the same value)."""
 
 from __future__ import annotations
 
