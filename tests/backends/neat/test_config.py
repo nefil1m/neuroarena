@@ -1,4 +1,5 @@
 import neat
+import pytest
 
 from neuroarena.backends.neat.config import build_neat_config
 from neuroarena.interfaces.spaces import Box
@@ -32,3 +33,78 @@ def test_config_produces_a_working_genome_and_network() -> None:
     output = net.activate([0.0] * 10)
     assert len(output) == 2
     assert all(-1.0 <= v <= 1.0 for v in output)
+
+
+def test_hyperparameter_override_reaches_genome_config() -> None:
+    config = build_neat_config(
+        Box(-1.0, 1.0, (10,)),
+        Box(-1.0, 1.0, (2,)),
+        population_size=25,
+        hyperparameter_overrides={"weight_mutate_rate": 0.99},
+    )
+    assert config.genome_config.weight_mutate_rate == 0.99
+
+
+def test_hyperparameter_override_reaches_species_set_config() -> None:
+    config = build_neat_config(
+        Box(-1.0, 1.0, (10,)),
+        Box(-1.0, 1.0, (2,)),
+        population_size=25,
+        hyperparameter_overrides={"compatibility_threshold": 5.5},
+    )
+    assert config.species_set_config.compatibility_threshold == 5.5
+
+
+def test_hyperparameter_override_reaches_stagnation_config() -> None:
+    config = build_neat_config(
+        Box(-1.0, 1.0, (10,)),
+        Box(-1.0, 1.0, (2,)),
+        population_size=25,
+        hyperparameter_overrides={"max_stagnation": 42},
+    )
+    assert config.stagnation_config.max_stagnation == 42
+
+
+def test_hyperparameter_override_reaches_reproduction_config() -> None:
+    config = build_neat_config(
+        Box(-1.0, 1.0, (10,)),
+        Box(-1.0, 1.0, (2,)),
+        population_size=25,
+        hyperparameter_overrides={"elitism": 4},
+    )
+    assert config.reproduction_config.elitism == 4
+
+
+def test_hyperparameter_override_reaches_top_level_neat_section() -> None:
+    config = build_neat_config(
+        Box(-1.0, 1.0, (10,)),
+        Box(-1.0, 1.0, (2,)),
+        population_size=25,
+        hyperparameter_overrides={"fitness_threshold": 500.0},
+    )
+    assert config.fitness_threshold == 500.0
+
+
+def test_unknown_hyperparameter_override_raises() -> None:
+    with pytest.raises(ValueError, match="unknown NEAT hyperparameter"):
+        build_neat_config(
+            Box(-1.0, 1.0, (10,)),
+            Box(-1.0, 1.0, (2,)),
+            population_size=25,
+            hyperparameter_overrides={"not_a_real_parameter": 1},
+        )
+
+
+def test_reserved_key_override_raises() -> None:
+    with pytest.raises(ValueError, match="pop_size"):
+        build_neat_config(
+            Box(-1.0, 1.0, (10,)),
+            Box(-1.0, 1.0, (2,)),
+            population_size=25,
+            hyperparameter_overrides={"pop_size": 999},
+        )
+
+
+def test_no_overrides_behaves_exactly_as_before() -> None:
+    config = build_neat_config(Box(-1.0, 1.0, (10,)), Box(-1.0, 1.0, (2,)), population_size=25)
+    assert config.pop_size == 25

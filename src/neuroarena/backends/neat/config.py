@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from collections.abc import Mapping
 
 import neat
 
@@ -98,13 +99,41 @@ min_species_size    = 2
 Written to a temp file at build time — see `build_neat_config` — rather than shipped as a
 packaged data file, so it stays a plain, diffable, version-controlled Python string."""
 
+_RESERVED_OVERRIDE_KEYS = {"pop_size", "num_inputs", "num_outputs", "input_keys", "output_keys"}
+"""These are set from `build_neat_config`'s own `population_size`/space arguments, which are
+dedicated Phase 5 RunConfig knobs in their own right (`population_size`) or derived from the
+Environment (`num_inputs`/`num_outputs`/...) — never from the generic `neat_hyperparameters`
+override dict, so a caller can't accidentally fight the dedicated knob with a same-named
+override."""
+
+_TOP_LEVEL_HYPERPARAMETERS = {
+    "fitness_criterion",
+    "fitness_threshold",
+    "reset_on_extinction",
+    "no_fitness_termination",
+}
+"""The `[NEAT]` section's own keys, stored directly on `neat.Config` (not on one of its four
+sub-configs) — see `neat.Config.__init__`."""
+
+_SUBCONFIG_ATTRS = (
+    "genome_config",
+    "species_set_config",
+    "stagnation_config",
+    "reproduction_config",
+)
+
 
 def build_neat_config(
-    observation_space: Box, action_space: Box, population_size: int
+    observation_space: Box,
+    action_space: Box,
+    population_size: int,
+    hyperparameter_overrides: Mapping[str, float | int | bool | str] | None = None,
 ) -> neat.Config:
-    """A `neat.Config` whose genome shape matches `observation_space`/`action_space` and
-    whose population size matches `population_size`. Everything else is the bundled
-    template's defaults."""
+    """A `neat.Config` whose genome shape matches `observation_space`/`action_space`, whose
+    population size matches `population_size`, and whose hyperparameters match the bundled
+    template's defaults except where `hyperparameter_overrides` says otherwise (Phase 5's
+    `RunConfig.neat_hyperparameters` knob — see the Phase 5 doc's "NEAT hyperparameters
+    become configurable" requirement)."""
     fd, path = tempfile.mkstemp(suffix=".cfg", text=True)
     try:
         with os.fdopen(fd, "w") as f:
@@ -126,4 +155,29 @@ def build_neat_config(
     config.genome_config.input_keys = [-i - 1 for i in range(num_inputs)]
     config.genome_config.output_keys = list(range(num_outputs))
     config.pop_size = population_size
+
+    if hyperparameter_overrides:
+        _apply_hyperparameter_overrides(config, hyperparameter_overrides)
+
     return config
+
+
+def _apply_hyperparameter_overrides(
+    config: neat.Config, overrides: Mapping[str, float | int | bool | str]
+) -> None:
+    for key, value in overrides.items():
+        if key in _RESERVED_OVERRIDE_KEYS:
+            raise ValueError(
+                f"{key!r} is set via build_neat_config's own population_size/space "
+                "arguments, not hyperparameter_overrides"
+            )
+        if key in _TOP_LEVEL_HYPERPARAMETERS:
+            setattr(config, key, value)
+            continue
+        for attr in _SUBCONFIG_ATTRS:
+            subconfig = getattr(config, attr)
+            if hasattr(subconfig, key):
+                setattr(subconfig, key, value)
+                break
+        else:
+            raise ValueError(f"unknown NEAT hyperparameter override: {key!r}")

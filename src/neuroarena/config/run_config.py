@@ -29,4 +29,5 @@ class RunConfig:
     target_fitness: float | None = None
     sensor_config: SensorConfig = field(default_factory=SensorConfig)
     physics_constants: PhysicsConstants = field(default_factory=PhysicsConstants)
+    neat_hyperparameters: dict[str, float | int | bool | str] = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION

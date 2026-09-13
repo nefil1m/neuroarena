@@ -77,3 +77,18 @@ def test_sensor_config_and_physics_constants_are_settable() -> None:
     )
     assert config.sensor_config.ray_angles_deg == (-30.0, 30.0)
     assert config.physics_constants.max_speed == 500.0
+
+
+def test_neat_hyperparameters_defaults_to_empty_dict() -> None:
+    assert RunConfig().neat_hyperparameters == {}
+
+
+def test_neat_hyperparameters_is_settable() -> None:
+    config = RunConfig(neat_hyperparameters={"weight_mutate_rate": 0.9})
+    assert config.neat_hyperparameters == {"weight_mutate_rate": 0.9}
+
+
+def test_neat_hyperparameters_defaults_are_independent_between_instances() -> None:
+    a, b = RunConfig(), RunConfig()
+    a.neat_hyperparameters["x"] = 1
+    assert b.neat_hyperparameters == {}
