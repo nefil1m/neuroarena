@@ -317,3 +317,36 @@ def test_neat_hyperparameters_reach_the_built_neat_config() -> None:
     # White-box check: NeatTrainer has no public accessor for the underlying neat.Config,
     # and this is exactly the wiring this task adds, so the test reaches into `_neat_config`.
     assert trainer._neat_config.species_set_config.compatibility_threshold == 7.5
+
+
+def test_run_stops_after_max_generations() -> None:
+    config = RunConfig(max_generations=3)
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), config, population_size=5)
+    updates = list(trainer.run())
+    assert [u.progress_index for u in updates] == [0, 1, 2]
+
+
+def test_run_stops_once_target_fitness_is_reached() -> None:
+    # DummyEnvironment truncates every episode after exactly 5 steps, DummyObjective's
+    # fitness is steps survived, so every genome's fitness is 5.0 every generation —
+    # best_fitness reaches 5.0 on generation 0 already.
+    config = RunConfig(target_fitness=5.0)
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), config, population_size=5)
+    updates = list(trainer.run())
+    assert [u.progress_index for u in updates] == [0]
+
+
+def test_run_with_neither_stop_condition_set_keeps_running() -> None:
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    run = trainer.run()
+    updates = [next(run) for _ in range(5)]
+    assert [u.progress_index for u in updates] == [0, 1, 2, 3, 4]
+
+
+def test_both_stop_conditions_set_whichever_triggers_first_wins() -> None:
+    # target_fitness is unreachable (DummyObjective never exceeds 5.0), so max_generations
+    # must be what stops the run.
+    config = RunConfig(max_generations=2, target_fitness=1_000_000.0)
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), config, population_size=5)
+    updates = list(trainer.run())
+    assert [u.progress_index for u in updates] == [0, 1]

@@ -83,7 +83,22 @@ class NeatTrainer:
 
     def run(self) -> Iterator[TrainingUpdate]:
         while True:
-            yield self._run_one_generation()
+            update = self._run_one_generation()
+            yield update
+            if self._should_auto_stop(update):
+                return
+
+    def _should_auto_stop(self, update: TrainingUpdate) -> bool:
+        """Phase 5's run-level automatic stop: checked once per generation boundary,
+        alongside the existing per-generation step ceiling. Distinct from
+        `Objective.should_stop()`, which ends one episode, not the run."""
+        max_generations = self._config.max_generations
+        if max_generations is not None and update.progress_index + 1 >= max_generations:
+            return True
+        target_fitness = self._config.target_fitness
+        if target_fitness is not None and update.best_fitness >= target_fitness:
+            return True
+        return False
 
     def _run_one_generation(self) -> TrainingUpdate:
         self._env = self._make_env()
