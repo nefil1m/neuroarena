@@ -259,3 +259,14 @@ def _arc(
         for i in range(steps + 1)
     ]
     return iter(zip(points, points[1:], strict=False))
+
+
+def track_loop_length(track: Track) -> float:
+    """Total path length of the loop's centerline — radius `cell_size / 2`, the midpoint
+    between the inner/outer collision walls `boundary_segments` derives (independent of
+    `drivable_width`, which offsets both walls equally). A straight tile contributes
+    `cell_size`; a curve tile contributes a quarter-circle arc, `(pi / 2) * (cell_size / 2)`.
+    Used to turn Phase 3's raw `progress` into `lap_progress`, a fraction of one lap."""
+    straight_count = sum(1 for kind in track.cells.values() if not kind.is_curve)
+    curve_count = len(track.cells) - straight_count
+    return straight_count * track.cell_size + curve_count * (math.pi / 2) * (track.cell_size / 2)

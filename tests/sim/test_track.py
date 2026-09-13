@@ -12,6 +12,7 @@ from neuroarena.sim.track import (
     TrackValidationError,
     boundary_segments,
     tile_kind_for_open_edges,
+    track_loop_length,
 )
 
 
@@ -133,3 +134,10 @@ def test_tile_kind_for_open_edges_matches_known_kinds() -> None:
 def test_tile_kind_for_open_edges_rejects_same_facing_twice() -> None:
     with pytest.raises(ValueError):
         tile_kind_for_open_edges(Facing.N, Facing.N)
+
+
+def test_loop_length_sums_straights_and_curve_arcs() -> None:
+    # _rounded_rectangle(): 6 straight cells + 4 curve cells, CELL_SIZE = 512.
+    track = Track(cells=_rounded_rectangle(), start_cell=(1, 0), start_facing=Facing.E)
+    expected = 6 * 512.0 + 4 * (math.pi / 2) * 256.0
+    assert track_loop_length(track) == pytest.approx(expected)
