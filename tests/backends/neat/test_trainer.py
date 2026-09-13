@@ -1,3 +1,4 @@
+import random
 from pathlib import Path
 
 import pytest
@@ -66,6 +67,32 @@ def test_checkpoint_round_trip_resumes_generation_count(tmp_path: Path) -> None:
     restored_update = next(restored.run())
     assert restored_update.progress_index == 2  # continues from generation 2, not 0
     assert restored_update.population_size == 5
+
+
+def test_checkpoint_round_trip_restores_exact_random_state(tmp_path: Path) -> None:
+    # A regression test for a bug where `load_checkpoint` restored the saved global
+    # `random` state too early: `NeatTrainer.__init__` (invoked internally by
+    # `load_checkpoint`) builds a throwaway `neat.Population` whose genome
+    # initialization consumes `random` draws, silently advancing the RNG past the
+    # restored state before the real, resumed population replaced it. The global
+    # `random` state right after `load_checkpoint` returns must exactly equal the state
+    # captured at `save_checkpoint` time, so a resumed run's mutation/crossover draws
+    # continue the exact same sequence rather than diverging.
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    run = trainer.run()
+    next(run)
+    next(run)
+    checkpoint_path = tmp_path / "checkpoint.pkl"
+    trainer.save_checkpoint(checkpoint_path)
+    state_at_save = random.getstate()
+
+    # Perturb the global RNG between save and load so a load that fails to restore
+    # state would leave behind some other (wrong) state rather than accidentally
+    # matching by coincidence.
+    random.random()
+
+    NeatTrainer.load_checkpoint(checkpoint_path, DummyEnvironment, DummyObjective(), RunConfig())
+    assert random.getstate() == state_at_save
 
 
 def test_checkpoint_rejects_unknown_schema_version(tmp_path: Path) -> None:

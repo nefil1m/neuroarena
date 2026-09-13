@@ -146,9 +146,17 @@ class NeatTrainer:
                 f"unreadable NEAT checkpoint schema_version {version!r} "
                 f"(supports {_CHECKPOINT_SCHEMA_VERSION})"
             )
-        random.setstate(payload["random_state"])
         neat_config = payload["neat_config"]
+        # `cls(...)` below runs `__init__`, which unconditionally builds a throwaway
+        # `neat.Population(neat_config)` (initial_state=None) — genome weight/bias
+        # initialization there consumes draws from the global `random` module. That
+        # population is discarded a line later, but the RNG draws it consumed are not
+        # undone, so restoring the saved state before `cls(...)` would let it drift again
+        # before the real, resumed population is built. Restore the saved state right here,
+        # immediately before constructing the REAL population, so the global RNG is exactly
+        # at `payload["random_state"]` when the first real mutation/crossover draw happens.
         trainer = cls(make_env, objective, config, neat_config=neat_config)
+        random.setstate(payload["random_state"])
         trainer._population = neat.Population(
             neat_config,
             initial_state=(payload["population"], payload["species"], payload["generation"]),
