@@ -91,6 +91,8 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'neuroarena.persistence
 
 - [ ] **Step 3: Write the migration file and connection helper**
 
+Create an empty `src/neuroarena/persistence/__init__.py` (this project's existing packages — `backends/__init__.py`, `config/__init__.py`, etc. — are all empty marker files; match that convention).
+
 Create `src/neuroarena/persistence/migrations/0001_initial.sql`:
 
 ```sql
@@ -1352,7 +1354,7 @@ git commit -m "feat(phase-6): add ProgressObjective, the first concrete Objectiv
 - Test: `tests/persistence/test_recorder.py`
 
 **Interfaces:**
-- Consumes: `neuroarena.interfaces.protocols.{Trainer, TrainingUpdate}`, `generation_stats_repo.record_generation_stat`, `checkpoints_repo.{record_checkpoint, list_checkpoints, delete_checkpoint}`, `runs_repo.{create_run, update_run_status}`.
+- Consumes: `neuroarena.interfaces.protocols.{Trainer, TrainingUpdate}`, `generation_stats_repo.record_generation_stat`, `checkpoints_repo.{record_checkpoint, list_checkpoints, delete_checkpoint}`, `runs_repo.{create_run, update_run_status}`, `settings_history_repo.record_settings_entry` (writes the one up-front `settings_history` row described below — the diff itself is computed by the caller, Task 10, and passed in as `initial_settings_diff`).
 - Produces: `run_and_record(conn, trainer: Trainer, *, model_id: str, track_id: str | None, starting_generation: int, resume_dir: Path, champion_dir: Path | None, checkpoint_every_n_generations: int, champion_retention_cap: int | None, initial_settings_diff: dict[str, Any]) -> RunRecord`. Creates the `runs` row itself (status starts `"running"`, moves to `"completed"` on normal exhaustion of `trainer.run()` or `"crashed"` if it raises), writes one `settings_history` entry up front, one `generation_stats` row per `TrainingUpdate`, a `"resume"`-kind checkpoint (via `trainer.save_checkpoint`) every `checkpoint_every_n_generations` generations (every save kept), and — if `champion_dir` is not `None` — registers that generation's champion file (`champion_dir/gen_<generation:05d>.pkl`, `NeatTrainer`'s existing unconditional per-generation write) as a `"champion"`-kind checkpoint row, then prunes the oldest champion rows/files beyond `champion_retention_cap` if it is set. Consumed by Task 10 (CLI).
 
 - [ ] **Step 1: Write the failing test**
