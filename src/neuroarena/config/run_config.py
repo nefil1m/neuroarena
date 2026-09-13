@@ -23,7 +23,12 @@ class RunConfig:
     `neat_hyperparameters` is likewise a real knob — a flat `key: value` override dict applied
     on top of `build_neat_config`'s bundled template defaults (see
     `backends.neat.config._apply_hyperparameter_overrides` for exactly which keys are
-    accepted)."""
+    accepted).
+
+    `checkpoint_every_n_generations` and `champion_retention_cap` are Phase 6 knobs
+    consumed by `neuroarena.persistence.recorder` — the first sets resume-checkpoint
+    cadence (every save kept, never overwritten), the second optionally bounds how many
+    champion checkpoints (Phase 4's per-generation capture) are retained."""
 
     master_seed: int = 0
     max_generation_steps: int = 300_000
@@ -34,6 +39,8 @@ class RunConfig:
     max_episode_steps: int = 3000
     max_generations: int | None = None
     target_fitness: float | None = None
+    checkpoint_every_n_generations: int = 10
+    champion_retention_cap: int | None = None
     sensor_config: SensorConfig = field(default_factory=SensorConfig)
     physics_constants: PhysicsConstants = field(default_factory=PhysicsConstants)
     neat_hyperparameters: dict[str, float | int | bool | str] = field(default_factory=dict)

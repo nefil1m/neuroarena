@@ -92,3 +92,15 @@ def test_neat_hyperparameters_defaults_are_independent_between_instances() -> No
     a, b = RunConfig(), RunConfig()
     a.neat_hyperparameters["x"] = 1
     assert b.neat_hyperparameters == {}
+
+
+def test_checkpoint_every_n_generations_default() -> None:
+    assert RunConfig().checkpoint_every_n_generations == 10
+
+
+def test_champion_retention_cap_defaults_to_none() -> None:
+    assert RunConfig().champion_retention_cap is None
+
+
+def test_champion_retention_cap_is_settable() -> None:
+    assert RunConfig(champion_retention_cap=20).champion_retention_cap == 20
