@@ -46,7 +46,7 @@ class NeatTrainer:
         objective: Objective,
         config: RunConfig,
         *,
-        population_size: int = 150,
+        population_size: int | None = None,
         neat_config: neat.Config | None = None,
         champion_dir: Path | None = None,
     ) -> None:
@@ -57,6 +57,10 @@ class NeatTrainer:
         if champion_dir is not None:
             champion_dir.mkdir(parents=True, exist_ok=True)
 
+        resolved_population_size = (
+            population_size if population_size is not None else config.population_size
+        )
+
         env = make_env()
         if neat_config is None:
             # `build_neat_config` sizes a genome to concrete continuous bounds; NEAT (as
@@ -64,7 +68,12 @@ class NeatTrainer:
             observation_space, action_space = env.observation_space, env.action_space
             if not isinstance(observation_space, Box) or not isinstance(action_space, Box):
                 raise TypeError("NeatTrainer requires Box observation/action spaces")
-            neat_config = build_neat_config(observation_space, action_space, population_size)
+            neat_config = build_neat_config(
+                observation_space,
+                action_space,
+                resolved_population_size,
+                hyperparameter_overrides=config.neat_hyperparameters or None,
+            )
         self._neat_config = neat_config
         self._population = neat.Population(self._neat_config)
         self._env = env

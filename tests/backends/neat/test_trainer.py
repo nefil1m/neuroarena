@@ -292,3 +292,28 @@ def test_checkpoint_rejects_unknown_schema_version(tmp_path: Path) -> None:
     path.write_bytes(pickle.dumps({"schema_version": 999}))
     with pytest.raises(ValueError, match="schema_version"):
         NeatTrainer.load_checkpoint(path, DummyEnvironment, DummyObjective(), RunConfig())
+
+
+def test_population_size_falls_back_to_config_when_not_given() -> None:
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(population_size=12))
+    update = next(trainer.run())
+    assert update.population_size == 12
+
+
+def test_explicit_population_size_overrides_config() -> None:
+    trainer = NeatTrainer(
+        DummyEnvironment,
+        DummyObjective(),
+        RunConfig(population_size=12),
+        population_size=4,
+    )
+    update = next(trainer.run())
+    assert update.population_size == 4
+
+
+def test_neat_hyperparameters_reach_the_built_neat_config() -> None:
+    config = RunConfig(neat_hyperparameters={"compatibility_threshold": 7.5})
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), config, population_size=5)
+    # White-box check: NeatTrainer has no public accessor for the underlying neat.Config,
+    # and this is exactly the wiring this task adds, so the test reaches into `_neat_config`.
+    assert trainer._neat_config.species_set_config.compatibility_threshold == 7.5
