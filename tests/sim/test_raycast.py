@@ -61,3 +61,12 @@ def test_cast_rays_heading_rotates_the_fan() -> None:
     facing_north = cast_rays((0.0, 0.0), math.pi / 2, (0.0,), 200.0, boundary, car_radius=0.0)
     assert facing_east == [0.0]
     assert facing_north[0] == pytest.approx(1.0 - 100.0 / 200.0)
+
+
+def test_cast_rays_handles_zero_max_dist_without_dividing_by_zero() -> None:
+    boundary = [((10.0, -50.0), (10.0, 50.0))]
+    proximities = cast_rays((0.0, 0.0), 0.0, (0.0,), 0.0, boundary, car_radius=10.0)
+    assert proximities == [1.0]  # wall sits exactly at the bumper (raw=10=car_radius)
+
+    proximities_no_hit = cast_rays((0.0, 0.0), 0.0, (0.0,), 0.0, [], car_radius=10.0)
+    assert proximities_no_hit == [0.0]

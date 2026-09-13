@@ -37,13 +37,18 @@ def cast_rays(
     `1 - effective_distance / max_dist`, clamped to `[0, 1]`. `effective_distance` measures
     from the car's bumper (its bounding circle, radius `car_radius` — see `collision.py`),
     not its center, so `1.0` means the same "touching the wall" state
-    `collision.distance_to_boundary` reports."""
+    `collision.distance_to_boundary` reports. A non-positive `max_dist` (a legitimate result
+    of `SensorConfig`'s range-clamp formula at extreme reverse speed) means there is no
+    sensing range at all — every ray reads whatever it would at zero range, `1.0` for a hit
+    at the bumper and `0.0` otherwise, without dividing by `max_dist`."""
     proximities = []
     for deg in angles_deg:
         angle = heading + math.radians(deg)
         raw = cast_ray(origin, angle, max_dist + car_radius, boundary)
         if raw is None:
             proximities.append(0.0)
+        elif max_dist <= 0.0:
+            proximities.append(1.0)
         else:
             effective = max(0.0, raw - car_radius)
             proximities.append(max(0.0, min(1.0, 1.0 - effective / max_dist)))

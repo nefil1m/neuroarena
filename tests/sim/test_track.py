@@ -11,6 +11,8 @@ from neuroarena.sim.track import (
     Track,
     TrackValidationError,
     boundary_segments,
+    centerline_path,
+    project_onto_centerline,
     tile_kind_for_open_edges,
     track_loop_length,
 )
@@ -141,3 +143,37 @@ def test_loop_length_sums_straights_and_curve_arcs() -> None:
     track = Track(cells=_rounded_rectangle(), start_cell=(1, 0), start_facing=Facing.E)
     expected = 6 * 512.0 + 4 * (math.pi / 2) * 256.0
     assert track_loop_length(track) == pytest.approx(expected)
+
+
+def test_centerline_path_is_closed_and_reasonably_sized() -> None:
+    track = Track(cells=_rounded_rectangle(), start_cell=(1, 0), start_facing=Facing.E)
+    path = centerline_path(track)
+    assert len(path) > len(track.cells)  # curves are discretized into multiple points
+    segments = list(zip(path, path[1:] + path[:1], strict=True))
+    for a, b in segments:
+        assert math.hypot(b[0] - a[0], b[1] - a[1]) <= CELL_SIZE + 1e-6
+
+
+def test_project_onto_centerline_is_bounded_for_off_path_points() -> None:
+    track = Track(cells=_rounded_rectangle(), start_cell=(1, 0), start_facing=Facing.E)
+    path = centerline_path(track)
+    loop_length = track_loop_length(track)
+    for angle_deg in range(0, 360, 15):
+        angle = math.radians(angle_deg)
+        point = (1280.0 + 100 * math.cos(angle), 256.0 + 100 * math.sin(angle))
+        arc_length = project_onto_centerline(point, path)
+        assert 0.0 <= arc_length < loop_length
+
+
+def test_project_onto_centerline_places_spawn_near_the_path_start() -> None:
+    # `centerline_path` starts its first point at the start cell's *incoming* boundary (the
+    # edge shared with the previous cell in the loop), not at the exact spawn coordinate, so
+    # the spawn (the cell's center) lands half a cell (CELL_SIZE / 2 = 256) along the first
+    # segment rather than at arc_length == 0. The threshold below accounts for that fixed
+    # offset while still rejecting a real bug (e.g. landing near the middle of the loop).
+    track = Track(cells=_rounded_rectangle(), start_cell=(1, 0), start_facing=Facing.E)
+    path = centerline_path(track)
+    loop_length = track_loop_length(track)
+    spawn = track.cell_center(track.start_cell)
+    arc_length = project_onto_centerline(spawn, path)
+    assert arc_length < CELL_SIZE or arc_length > loop_length - CELL_SIZE

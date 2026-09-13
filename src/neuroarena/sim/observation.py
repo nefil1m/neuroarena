@@ -43,6 +43,10 @@ def build_observation(
     sensor_config: SensorConfig,
     constants: PhysicsConstants,
 ) -> np.ndarray:
+    """Assembles the observation vector: `len(sensor_config.ray_angles_deg)` raycast
+    proximities (in `sensor_config.ray_angles_deg` order), then normalised speed, then the
+    last commanded `(steering, throttle)` — e.g. for the default 7-ray config, slots
+    `[0:7]` are rays, `[7]` is speed, `[8:10]` is `(steering, throttle)`."""
     norm_speed = speed_norm(car.speed, constants)
     ray_range = max(
         0.0,

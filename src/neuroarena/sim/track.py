@@ -270,3 +270,126 @@ def track_loop_length(track: Track) -> float:
     straight_count = sum(1 for kind in track.cells.values() if not kind.is_curve)
     curve_count = len(track.cells) - straight_count
     return straight_count * track.cell_size + curve_count * (math.pi / 2) * (track.cell_size / 2)
+
+
+def centerline_path(track: Track, arc_steps: int = 8) -> list[Point]:
+    """An ordered polyline approximating the loop's centerline (radius `cell_size / 2`, the
+    same centerline `track_loop_length` measures analytically), starting where the car
+    spawns and proceeding around the loop in the `start_facing` direction. Used by Phase 3's
+    `CarEnvironment` to measure how far around the track the car has actually travelled, by
+    projecting its real position onto this path (`project_onto_centerline`) rather than
+    measuring raw distance driven — a car spinning in place would inflate raw distance
+    without ever advancing here, since the projection tracks net position, not motion."""
+    order = _ordered_cells(track)
+    n = len(order)
+    points: list[Point] = []
+    for i, cell in enumerate(order):
+        kind = track.cells[cell]
+        exit_facing = _facing_between(cell, order[(i + 1) % n])
+        entry_facing = next(f for f in kind.open_edges if f != exit_facing)
+        piece = (
+            _centerline_arc(
+                track.cell_center(cell), track.cell_size, entry_facing, exit_facing, arc_steps
+            )
+            if kind.is_curve
+            else _centerline_straight(
+                track.cell_center(cell), track.cell_size, entry_facing, exit_facing
+            )
+        )
+        points.extend(piece if i == 0 else piece[1:])
+    return points
+
+
+def project_onto_centerline(point: Point, centerline: list[Point]) -> float:
+    """Arc length from `centerline[0]` to the nearest point on the closed polyline
+    `centerline` (wrapping from the last point back to the first) to `point`, wrapped to
+    `[0, total_length)` where `total_length` is this polyline's own length (very close to,
+    but not exactly, `track_loop_length`'s analytic value, since this is a discretized
+    approximation of the same centerline)."""
+    segments = list(zip(centerline, centerline[1:] + centerline[:1], strict=True))
+    best_distance = math.inf
+    best_arc_length = 0.0
+    cumulative = 0.0
+    for a, b in segments:
+        abx, aby = b[0] - a[0], b[1] - a[1]
+        length = math.hypot(abx, aby)
+        t = (
+            0.0
+            if length == 0.0
+            else max(
+                0.0,
+                min(1.0, ((point[0] - a[0]) * abx + (point[1] - a[1]) * aby) / (length * length)),
+            )
+        )
+        closest = (a[0] + t * abx, a[1] + t * aby)
+        distance = math.hypot(point[0] - closest[0], point[1] - closest[1])
+        if distance < best_distance:
+            best_distance = distance
+            best_arc_length = cumulative + t * length
+        cumulative += length
+    return best_arc_length
+
+
+def _ordered_cells(track: Track) -> list[GridCell]:
+    """Cells in traversal order starting at `start_cell`, first step toward `start_facing`,
+    then following the loop (mirrors the walk `_assert_single_loop` already does, but seeded
+    to start at a specific cell/direction instead of an arbitrary one)."""
+    order = [track.start_cell]
+    dx, dy = track.start_facing.delta
+    current = (track.start_cell[0] + dx, track.start_cell[1] + dy)
+    previous = track.start_cell
+    while current != track.start_cell:
+        order.append(current)
+        neighbors = [
+            (current[0] + facing.delta[0], current[1] + facing.delta[1])
+            for facing in track.cells[current].open_edges
+        ]
+        next_cell = neighbors[0] if neighbors[1] == previous else neighbors[1]
+        previous, current = current, next_cell
+    return order
+
+
+def _facing_between(a: GridCell, b: GridCell) -> Facing:
+    delta = (b[0] - a[0], b[1] - a[1])
+    for facing in Facing:
+        if facing.delta == delta:
+            return facing
+    raise ValueError(f"{a} and {b} are not grid-adjacent")
+
+
+def _centerline_straight(
+    center: Point, cell_size: float, entry_facing: Facing, exit_facing: Facing
+) -> list[Point]:
+    half = cell_size / 2
+    entry_point = (
+        center[0] + entry_facing.delta[0] * half,
+        center[1] + entry_facing.delta[1] * half,
+    )
+    exit_point = (center[0] + exit_facing.delta[0] * half, center[1] + exit_facing.delta[1] * half)
+    return [entry_point, exit_point]
+
+
+def _centerline_arc(
+    center: Point, cell_size: float, entry_facing: Facing, exit_facing: Facing, arc_steps: int
+) -> list[Point]:
+    half = cell_size / 2
+    pivot = (
+        center[0] + (entry_facing.delta[0] + exit_facing.delta[0]) * half,
+        center[1] + (entry_facing.delta[1] + exit_facing.delta[1]) * half,
+    )
+    entry_point = (
+        center[0] + entry_facing.delta[0] * half,
+        center[1] + entry_facing.delta[1] * half,
+    )
+    exit_point = (center[0] + exit_facing.delta[0] * half, center[1] + exit_facing.delta[1] * half)
+    angle_entry = math.atan2(entry_point[1] - pivot[1], entry_point[0] - pivot[0])
+    angle_exit = math.atan2(exit_point[1] - pivot[1], exit_point[0] - pivot[0])
+    delta = (angle_exit - angle_entry + math.pi) % (2 * math.pi) - math.pi
+    angle_end = angle_entry + delta
+    return [
+        (
+            pivot[0] + half * math.cos(angle_entry + (angle_end - angle_entry) * i / arc_steps),
+            pivot[1] + half * math.sin(angle_entry + (angle_end - angle_entry) * i / arc_steps),
+        )
+        for i in range(arc_steps + 1)
+    ]
