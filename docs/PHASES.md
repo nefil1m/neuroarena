@@ -16,7 +16,7 @@ The phase set and its ordering are settled. Two flexibilities are part of that d
 | 2 | Track generation | Procedural tracks (size/complexity/seed), renderable as a real track | `phases/phase-2-track-generation.md` |
 | 3 | Sensors & env interface | 10-float observation, continuous action, game wired to the Environment interface | `phases/phase-3-sensors-env-interface.md` |
 | 4 | Learning backend: NEAT | NEAT end-to-end, headless + rendered | `phases/phase-4-learning-backend-neat.md` |
-| 5 | Training controls | Population size, sim speed, success criteria, episode/generation timeouts | `phases/phase-5-training-controls.md` |
+| 5 | Training controls | Population size, sim speed, success criteria, timeouts, run-level stop conditions, NEAT hyperparameters | `phases/phase-5-training-controls.md` |
 | 6 | Persistence | Checkpoint / resume (incl. resume under changed settings) + run history — SQLite + files | `phases/phase-6-persistence.md` |
 | 7 | Dashboard — control panel | Start/stop/pause, live scalar metrics, live-safe config edits, basic run history | `phases/phase-7-dashboard-control-panel.md` |
 | 8 | Dashboard — live canvas | In-browser live top-down view of a running population | `phases/phase-8-dashboard-live-canvas.md` |
@@ -31,3 +31,4 @@ The phase set and its ordering are settled. Two flexibilities are part of that d
 - 2026-09-10 — Promoted from DRAFT to FINALIZED. The phase set and ordering are now locked and change only by deliberate revision; individual phase-doc statuses are unchanged. This is the deliberate promotion `WORKFLOW.md` requires before Phase 0 implementation can begin (supersedes 60c7011).
 - 2026-09-10 — Adjusted two phase one-liners for the scope cut recorded in `OVERVIEW.md` the same day (dropped cross-game model transfer, sequential spawn mode, and shared-space collisions). Phase 5 no longer lists batch/sequential spawn or a collisions toggle; Phase 11's goal is now "validate the interfaces are game-agnostic" rather than "cross-game model testing". Phase set and ordering unchanged.
 - 2026-09-12 — Dropped "deviation limit" from Phase 5's one-liner: Phase 3's exploration pass removed the corresponding "max deviation from track before death" knob (its referent didn't survive resolving how `terminated`/off-track actually works — see Phase 3 and Phase 5's Revision history). Phase set and ordering unchanged.
+- 2026-09-13 — Expanded Phase 5's one-liner following its exploration pass: added run-level stop conditions and NEAT hyperparameters, both new knobs this pass added to Phase 5's scope (see its Revision history). Phase set and ordering unchanged.
