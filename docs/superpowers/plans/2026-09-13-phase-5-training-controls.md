@@ -207,7 +207,13 @@ SCHEMA_VERSION = 1
 
 @dataclass
 class RunConfig:
-    """..."""  # docstring unchanged from Task 1
+    """Serializable run configuration — the single source of truth a training run is built
+    from (Phase 5). Phase 0 fixed the envelope (`master_seed`, `schema_version`); Phase 4
+    added `max_generation_steps` as a stub ahead of this phase. `track_id`/`headless`/
+    `sim_speed` are stub fields with no consumer yet in this codebase — see the Phase 5
+    implementation plan's "Not built in this plan" note for why (no phase has named a
+    training-launch entrypoint to resolve `track_id` into a `Track` or read `sim_speed`).
+    """
 
     master_seed: int = 0
     max_generation_steps: int = 300_000
