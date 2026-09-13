@@ -1,9 +1,12 @@
 import numpy as np
 import pytest
 
+from neuroarena.config import RunConfig
 from neuroarena.interfaces.protocols import Environment
 from neuroarena.interfaces.spaces import Box
 from neuroarena.sim.car_env import CarEnvironment, CarEnvironmentConfig
+from neuroarena.sim.observation import SensorConfig
+from neuroarena.sim.physics import PhysicsConstants
 from neuroarena.sim.track import Facing, GridCell, TileKind, Track, track_loop_length
 
 
@@ -106,3 +109,30 @@ def test_reset_clears_progress_from_a_previous_episode() -> None:
     _, terminated, _, info = env.step(np.array([0.0, 0.0], dtype=np.float32))
     assert not terminated
     assert info["progress"] == pytest.approx(0.0)
+
+
+def test_from_run_config_uses_platform_defaults_by_default() -> None:
+    car_config = CarEnvironmentConfig.from_run_config(RunConfig())
+    assert car_config == CarEnvironmentConfig()
+
+
+def test_from_run_config_carries_a_non_default_sensor_config() -> None:
+    sensor_config = SensorConfig(ray_angles_deg=(-40.0, 0.0, 40.0))
+    car_config = CarEnvironmentConfig.from_run_config(RunConfig(sensor_config=sensor_config))
+    assert car_config.sensor_config == sensor_config
+
+
+def test_from_run_config_carries_physics_constants_and_episode_limit() -> None:
+    physics = PhysicsConstants(max_speed=500.0)
+    car_config = CarEnvironmentConfig.from_run_config(
+        RunConfig(physics_constants=physics, max_episode_steps=100)
+    )
+    assert car_config.physics_constants == physics
+    assert car_config.max_episode_steps == 100
+
+
+def test_from_run_config_env_has_a_narrower_observation_space() -> None:
+    sensor_config = SensorConfig(ray_angles_deg=(-40.0, 0.0, 40.0))  # 3 rays, not 7
+    car_config = CarEnvironmentConfig.from_run_config(RunConfig(sensor_config=sensor_config))
+    env = CarEnvironment(_track(), track_id="abc123", config=car_config)
+    assert env.observation_space == Box(-1.0, 1.0, (6,))  # 3 rays + speed + 2 last-action

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -22,16 +22,33 @@ from neuroarena.sim.track import (
     track_loop_length,
 )
 
+if TYPE_CHECKING:
+    from neuroarena.config import RunConfig
+
 _CRASH_EPSILON = 1e-6
 
 
 @dataclass(frozen=True)
 class CarEnvironmentConfig:
-    """Starting defaults; Phase 5 wires these through `RunConfig`."""
+    """Starting defaults; also buildable from a `RunConfig` via `from_run_config` (Phase 5)."""
 
     sensor_config: SensorConfig = SensorConfig()
     physics_constants: PhysicsConstants = PhysicsConstants()
     max_episode_steps: int = 3000
+
+    @classmethod
+    def from_run_config(cls, config: RunConfig) -> CarEnvironmentConfig:
+        """Reads the three car-specific knobs Phase 5 put on `RunConfig`
+        (`sensor_config`, `physics_constants`, `max_episode_steps`) into a
+        `CarEnvironmentConfig`. `RunConfig.track_id` is not read here — which `Track`
+        object a run uses is a separate `CarEnvironment.__init__` argument, resolved by
+        whatever code loads the track by id (see the Phase 5 implementation plan's "Not
+        built in this plan" note)."""
+        return cls(
+            sensor_config=config.sensor_config,
+            physics_constants=config.physics_constants,
+            max_episode_steps=config.max_episode_steps,
+        )
 
 
 class CarEnvironment:
