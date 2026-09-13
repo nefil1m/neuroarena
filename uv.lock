@@ -398,11 +398,21 @@ wheels = [
 ]
 
 [[package]]
+name = "neat-python"
+version = "0.92"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f6/92/2778744d408304b77eb39c1edf91eaced1e18e1cd45a766a20fd1b716c22/neat-python-0.92.tar.gz", hash = "sha256:be722a62d053b39fe960228e3e0baffdebe73074133ce40bbd35de650ca53a0f", size = 34323, upload-time = "2017-08-01T22:54:03.239Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/96/6f/e7074d9c869174c9b7379bd5820f8a774382937053a92c024f0a159e3e05/neat_python-0.92-py3-none-any.whl", hash = "sha256:c69f3748032cc9653b902f0cca05983b79f5288c67aed747aa47279161117059", size = 44212, upload-time = "2017-08-01T22:54:01.022Z" },
+]
+
+[[package]]
 name = "neuroarena"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "arcade" },
+    { name = "neat-python" },
     { name = "numpy" },
 ]
 
@@ -417,6 +427,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "arcade", specifier = ">=3.0" },
+    { name = "neat-python", specifier = ">=0.92,<1.0" },
     { name = "numpy", specifier = ">=1.26" },
 ]
 

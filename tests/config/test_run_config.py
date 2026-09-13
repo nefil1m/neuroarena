@@ -14,3 +14,11 @@ def test_fields_are_settable():
 def test_equality_is_field_wise():
     assert RunConfig(master_seed=1) == RunConfig(master_seed=1)
     assert RunConfig(master_seed=1) != RunConfig(master_seed=2)
+
+
+def test_max_generation_steps_default() -> None:
+    assert RunConfig().max_generation_steps == 300_000
+
+
+def test_max_generation_steps_is_settable() -> None:
+    assert RunConfig(max_generation_steps=1000).max_generation_steps == 1000

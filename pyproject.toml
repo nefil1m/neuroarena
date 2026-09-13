@@ -3,7 +3,7 @@ name = "neuroarena"
 version = "0.0.0"
 description = "Decoupled car-driving game and learning-model training platform"
 requires-python = ">=3.12"
-dependencies = ["numpy>=1.26", "arcade>=3.0"]
+dependencies = ["numpy>=1.26", "arcade>=3.0", "neat-python>=0.92,<1.0"]
 
 [project.scripts]
 neuroarena-play = "neuroarena.render.play:main"
