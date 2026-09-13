@@ -72,7 +72,7 @@ class NeatTrainer:
                 observation_space,
                 action_space,
                 resolved_population_size,
-                hyperparameter_overrides=config.neat_hyperparameters or None,
+                hyperparameter_overrides=config.neat_hyperparameters,
             )
         self._neat_config = neat_config
         self._population = neat.Population(self._neat_config)
@@ -89,9 +89,17 @@ class NeatTrainer:
                 return
 
     def _should_auto_stop(self, update: TrainingUpdate) -> bool:
-        """Phase 5's run-level automatic stop: checked once per generation boundary,
-        alongside the existing per-generation step ceiling. Distinct from
-        `Objective.should_stop()`, which ends one episode, not the run."""
+        """Phase 5's run-level automatic stop: checked once per generation boundary, after
+        `_run_one_generation` returns. Distinct from the per-generation step ceiling
+        (`StepBudget`), which is enforced *inside* `_run_one_generation` while a generation
+        is running — these are two separate checks at two separate points, not one. Also
+        distinct from `Objective.should_stop()`, which ends one episode, not the run.
+
+        `max_generations` is an absolute cumulative generation count, including across a
+        resume: `update.progress_index` keeps counting up from `self._generation` as restored
+        by `load_checkpoint`, so resuming a checkpoint saved at generation 10 with
+        `max_generations=3` stops after exactly one more generation (generation 10 satisfies
+        `progress_index + 1 >= 3`), not "3 more generations from wherever you resumed"."""
         max_generations = self._config.max_generations
         if max_generations is not None and update.progress_index + 1 >= max_generations:
             return True
@@ -188,6 +196,12 @@ class NeatTrainer:
         objective: Objective,
         config: RunConfig,
     ) -> NeatTrainer:
+        # NOTE: `config.neat_hyperparameters` is NOT applied when resuming — the checkpoint's
+        # own saved `neat_config` (including whatever hyperparameters were in effect when it
+        # was saved) is used as-is below, so a `RunConfig` passed here with different
+        # `neat_hyperparameters` than the checkpoint has no effect on the resumed run. This is
+        # correct, existing behavior; Phase 6 owns real resume/settings-history semantics.
+        #
         # Checkpoints are produced by `save_checkpoint` above and read back on the same
         # trusted local filesystem (this backend has no notion of loading a checkpoint from
         # an untrusted/remote source) — pickle is used because NEAT genomes/species/config

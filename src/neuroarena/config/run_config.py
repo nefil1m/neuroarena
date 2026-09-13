@@ -16,7 +16,14 @@ class RunConfig:
     `sim_speed` are stub fields with no consumer yet in this codebase — see the Phase 5
     implementation plan's "Not built in this plan" note for why (no phase has named a
     training-launch entrypoint to resolve `track_id` into a `Track` or read `sim_speed`).
-    """
+
+    `sensor_config` and `physics_constants` are real Phase 5 knobs, not stubs: they're wired
+    through `CarEnvironmentConfig.from_run_config` into the `CarEnvironment` a run trains
+    against, changing the car's raycast layout and kinematic constants respectively.
+    `neat_hyperparameters` is likewise a real knob — a flat `key: value` override dict applied
+    on top of `build_neat_config`'s bundled template defaults (see
+    `backends.neat.config._apply_hyperparameter_overrides` for exactly which keys are
+    accepted)."""
 
     master_seed: int = 0
     max_generation_steps: int = 300_000
