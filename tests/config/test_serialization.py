@@ -62,3 +62,39 @@ def test_roundtrip_reconstructs_physics_constants_as_a_real_dataclass() -> None:
 
 def test_roundtrip_preserves_value_with_nested_defaults() -> None:
     assert loads(dumps(RunConfig(master_seed=7))) == RunConfig(master_seed=7)
+
+
+def test_loads_reconstructs_partial_sensor_config_using_its_own_default() -> None:
+    # A hand-edited/corrupted config missing `ray_angles_deg` from `sensor_config` should
+    # fall back to `SensorConfig`'s own default for that field, not raise a bare KeyError.
+    text = json.dumps({"schema_version": SCHEMA_VERSION, "sensor_config": {"range_base": 100.0}})
+    restored = loads(text)
+    assert isinstance(restored.sensor_config, SensorConfig)
+    assert restored.sensor_config.range_base == 100.0
+    assert restored.sensor_config.ray_angles_deg == SensorConfig().ray_angles_deg
+
+
+def test_loads_ignores_unknown_key_inside_sensor_config() -> None:
+    text = json.dumps({"schema_version": SCHEMA_VERSION, "sensor_config": {"not_a_real_field": 1}})
+    restored = loads(text)
+    assert restored.sensor_config == SensorConfig()
+
+
+def test_loads_ignores_unknown_key_inside_physics_constants() -> None:
+    text = json.dumps(
+        {"schema_version": SCHEMA_VERSION, "physics_constants": {"not_a_real_field": 1}}
+    )
+    restored = loads(text)
+    assert restored.physics_constants == PhysicsConstants()
+
+
+def test_loads_rejects_non_dict_sensor_config() -> None:
+    text = json.dumps({"schema_version": SCHEMA_VERSION, "sensor_config": None})
+    with pytest.raises(TypeError, match="sensor_config"):
+        loads(text)
+
+
+def test_loads_rejects_non_dict_physics_constants() -> None:
+    text = json.dumps({"schema_version": SCHEMA_VERSION, "physics_constants": None})
+    with pytest.raises(TypeError, match="physics_constants"):
+        loads(text)

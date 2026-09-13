@@ -350,3 +350,12 @@ def test_both_stop_conditions_set_whichever_triggers_first_wins() -> None:
     trainer = NeatTrainer(DummyEnvironment, DummyObjective(), config, population_size=5)
     updates = list(trainer.run())
     assert [u.progress_index for u in updates] == [0, 1]
+
+
+def test_target_fitness_wins_over_a_distant_max_generations() -> None:
+    # Mirror of the above: max_generations is set far higher than the run could ever reach
+    # first, so target_fitness must be what stops the run.
+    config = RunConfig(max_generations=1_000_000, target_fitness=5.0)
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), config, population_size=5)
+    updates = list(trainer.run())
+    assert [u.progress_index for u in updates] == [0]
