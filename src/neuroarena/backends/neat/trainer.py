@@ -6,6 +6,9 @@ and why a force-truncated genome is scored on partial progress rather than penal
 
 from __future__ import annotations
 
+import copy
+import itertools
+import numbers
 import pickle
 import random
 import time
@@ -18,6 +21,7 @@ import neat
 from neuroarena.backends.neat.config import build_neat_config
 from neuroarena.backends.neat.evaluation import EvaluationResult, StepBudget, evaluate_genome
 from neuroarena.backends.neat.model import GenomeModel
+from neuroarena.interfaces.compat import IncompatibleDescriptorsError
 from neuroarena.interfaces.protocols import TrainingUpdate
 from neuroarena.interfaces.spaces import Box
 
@@ -25,7 +29,9 @@ if TYPE_CHECKING:
     from neuroarena.config import RunConfig
     from neuroarena.interfaces.protocols import Environment, Objective
 
-_CHECKPOINT_SCHEMA_VERSION = 1
+# 2: adds `ancestors`, `total_sim_steps`, `champion_dir` and the observation/action
+# descriptors, and drops the (unpicklable-from-3.14) `itertools.count` species indexer.
+_CHECKPOINT_SCHEMA_VERSION = 2
 
 
 class NeatTrainer:
@@ -116,13 +122,37 @@ class NeatTrainer:
         draws continue the same sequence rather than silently diverging. Checkpoint file
         format/retention is Phase 6's concern; this is a working save/load pair, not a claim
         on the eventual platform format."""
+        # `DefaultSpeciesSet.indexer` is an `itertools.count`, which pickle supports only under
+        # a DeprecationWarning today and not at all from Python 3.14 on (this project allows
+        # `>=3.12`). It carries no information beyond "next unused species id", so it is
+        # stripped from a shallow copy of the species set here — leaving the live object
+        # untouched — and re-derived from the restored species keys in `load_checkpoint`.
+        # `DefaultReproduction.genome_indexer` gets the same treatment for free: `reproduction`
+        # is not pickled at all, only its `ancestors` lineage map, which is real data.
+        species = copy.copy(self._population.species)
+        species.indexer = None
+        # `DefaultGenomeConfig.node_indexer` is the third such counter, lazily created the first
+        # time a structural mutation needs a new node key. Same treatment, same re-derivation.
+        neat_config = copy.copy(self._neat_config)
+        neat_config.genome_config = copy.copy(self._neat_config.genome_config)
+        neat_config.genome_config.node_indexer = None
         payload = {
             "schema_version": _CHECKPOINT_SCHEMA_VERSION,
-            "neat_config": self._neat_config,
+            "neat_config": neat_config,
             "population": self._population.population,
-            "species": self._population.species,
+            "species": species,
+            "ancestors": self._population.reproduction.ancestors,
             "generation": self._generation,
             "random_state": random.getstate(),
+            # Cumulative simulated steps must survive a resume, or a resumed run's reported
+            # `sim_time` would regress to zero. `wall_time` is deliberately NOT persisted: it
+            # measures this process's elapsed time, not the run's.
+            "total_sim_steps": self._total_sim_steps,
+            "champion_dir": None if self._champion_dir is None else str(self._champion_dir),
+            # Phase 0: "a checkpoint records the observation- and action-space descriptors the
+            # model was trained against"; `load_checkpoint` refuses a mismatched environment.
+            "observation_space": self._env.observation_space,
+            "action_space": self._env.action_space,
         }
         path.write_bytes(pickle.dumps(payload))
 
@@ -156,13 +186,64 @@ class NeatTrainer:
         # immediately before constructing the REAL population, so the global RNG is exactly
         # at `payload["random_state"]` when the first real mutation/crossover draw happens.
         trainer = cls(make_env, objective, config, neat_config=neat_config)
+        _check_descriptors(payload, trainer._env)
         random.setstate(payload["random_state"])
         trainer._population = neat.Population(
             neat_config,
             initial_state=(payload["population"], payload["species"], payload["generation"]),
         )
+        # `neat.Population.__init__` always builds a FRESH `DefaultReproduction` and therefore a
+        # fresh `genome_indexer = count(1)`, even when resuming from `initial_state`. Left alone,
+        # the next generation's offspring get ids that are already in use by the restored
+        # elites, and since `DefaultReproduction.reproduce` writes elites and offspring into the
+        # same dict, an elite is silently overwritten and the population shrinks below
+        # `pop_size`. Re-derive both counters from the restored keys: monotone by construction,
+        # so no counter needs to live in the payload (see `save_checkpoint`).
+        population = trainer._population
+        population.reproduction.genome_indexer = itertools.count(
+            max(payload["population"], default=0) + 1
+        )
+        population.reproduction.ancestors = payload["ancestors"]
+        population.species.indexer = itertools.count(
+            max((s.key for s in population.species.species.values()), default=0) + 1
+        )
+        # NEAT seeds `node_indexer` lazily from a single genome's own node keys, so leaving it
+        # `None` would let a resumed run hand out node keys that already exist in *other*
+        # genomes. Seed it from the whole restored population instead.
+        neat_config.genome_config.node_indexer = itertools.count(
+            max(
+                (key for genome in payload["population"].values() for key in genome.nodes),
+                default=0,
+            )
+            + 1
+        )
         trainer._generation = payload["generation"]
+        trainer._total_sim_steps = payload["total_sim_steps"]
+        champion_dir = payload["champion_dir"]
+        if champion_dir is not None:
+            # The `Trainer` protocol's `load_checkpoint` signature takes no `champion_dir`, so
+            # the path rides along in the payload; mirror `__init__`'s directory creation.
+            trainer._champion_dir = Path(champion_dir)
+            trainer._champion_dir.mkdir(parents=True, exist_ok=True)
         return trainer
+
+
+def _check_descriptors(payload: dict[str, Any], env: Environment) -> None:
+    """Phase 0's resume-safety gate: a checkpoint records the observation/action descriptors it
+    was trained against, and loading it into a shape-mismatched environment is refused. Descriptor
+    equality is the full field-wise comparison, exactly as `interfaces.compat.check_compatibility`
+    applies it to a `Model` — that function takes a `Model`, which a checkpoint payload is not,
+    so the same two comparisons are spelled out here rather than reused."""
+    if payload["observation_space"] != env.observation_space:
+        raise IncompatibleDescriptorsError(
+            f"observation space mismatch: checkpoint {payload['observation_space']!r} "
+            f"!= environment {env.observation_space!r}"
+        )
+    if payload["action_space"] != env.action_space:
+        raise IncompatibleDescriptorsError(
+            f"action space mismatch: checkpoint {payload['action_space']!r} "
+            f"!= environment {env.action_space!r}"
+        )
 
 
 class _ChampionTracker:
@@ -181,12 +262,12 @@ class _ChampionTracker:
             self._info = result.final_info
 
     def metrics(self) -> dict[str, float]:
-        # Only float-valued info keys belong in TrainingUpdate.champion_metrics (Phase 0:
-        # `dict[str, float]`) — `track_id` (str) is an identifier, not a metric, and is
-        # excluded. Car-env-specific keys (Phase 3's `info` contract); a future second
-        # game's Objective/info would need its own key set here.
-        return {
-            "crashed": float(self._info.get("crashed", 0.0)),
-            "progress": float(self._info.get("progress", 0.0)),
-            "lap_progress": float(self._info.get("lap_progress", 0.0)),
-        }
+        # Derived from whatever `info` the champion's own evaluation returned, never from a
+        # hard-coded key set: Phase 0 says the base interface knows nothing about `info`'s keys,
+        # so this backend must work unchanged against a future second game's Environment.
+        # Non-numeric values are dropped, since `TrainingUpdate.champion_metrics` is
+        # `dict[str, float]` — for Phase 3's car that excludes `track_id`, an identifier rather
+        # than a metric, and keeps exactly `crashed` / `progress` / `lap_progress`. The test is
+        # `numbers.Real` rather than `bool | int | float` so that an environment reporting numpy
+        # scalars (`np.float32`, `np.bool_`) is covered too, while arrays and strings are not.
+        return {k: float(v) for k, v in self._info.items() if isinstance(v, numbers.Real)}

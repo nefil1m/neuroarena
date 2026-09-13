@@ -1,11 +1,16 @@
 import random
+import typing
+import warnings
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from neuroarena.backends.neat.trainer import NeatTrainer
 from neuroarena.config import RunConfig
+from neuroarena.interfaces.compat import IncompatibleDescriptorsError
 from neuroarena.interfaces.protocols import Trainer, TrainingUpdate
+from neuroarena.interfaces.spaces import Box, Space
 from tests.interfaces.doubles import DummyEnvironment, DummyObjective
 
 
@@ -35,6 +40,10 @@ def test_generation_ceiling_bounds_total_steps_per_generation() -> None:
     update = next(trainer.run())
     assert update.population_size == 5
     assert update.worst_fitness <= 5.0
+    # The ceiling must actually bound the generation: `sim_time` counts environment steps
+    # elapsed (this backend's documented convention), so it can never exceed the budget.
+    # Without this the assertion above would also pass if the budget were ignored entirely.
+    assert update.sim_time <= 7
 
 
 def test_champion_dir_saves_one_genome_file_per_generation(tmp_path: Path) -> None:
@@ -93,6 +102,187 @@ def test_checkpoint_round_trip_restores_exact_random_state(tmp_path: Path) -> No
 
     NeatTrainer.load_checkpoint(checkpoint_path, DummyEnvironment, DummyObjective(), RunConfig())
     assert random.getstate() == state_at_save
+
+
+def test_checkpoint_round_trip_keeps_minting_fresh_genome_ids(tmp_path: Path) -> None:
+    # A regression test for a bug where `load_checkpoint` rebuilt `neat.Population` with a
+    # FRESH `DefaultReproduction`, resetting its `genome_indexer` to `count(1)`. New offspring
+    # were then minted with IDs already in use by the restored elites, and since
+    # `DefaultReproduction.reproduce` writes elites and offspring into the SAME dict, an elite
+    # was silently overwritten and the population shrank below `pop_size`.
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=20)
+    run = trainer.run()
+    next(run)
+    next(run)
+    pre_keys = set(trainer._population.population)
+    pre_max = max(pre_keys)
+    checkpoint_path = tmp_path / "checkpoint.pkl"
+    trainer.save_checkpoint(checkpoint_path)
+
+    restored = NeatTrainer.load_checkpoint(
+        checkpoint_path, DummyEnvironment, DummyObjective(), RunConfig()
+    )
+    restored_run = restored.run()
+    first = next(restored_run)
+    second = next(restored_run)
+
+    # (a) the population never shrinks: the collision above only surfaces in the generation
+    # AFTER the first post-resume reproduction, so both updates are checked.
+    assert first.population_size == 20
+    assert second.population_size == 20
+    # (b) every genome alive after resuming is either one carried over from before the
+    # checkpoint or a strictly-newer ID — never a recycled ID colliding with an old one.
+    for key in restored._population.population:
+        assert key in pre_keys or key > pre_max
+
+
+def test_load_checkpoint_reconstructs_monotone_id_counters(tmp_path: Path) -> None:
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=20)
+    run = trainer.run()
+    next(run)
+    next(run)
+    checkpoint_path = tmp_path / "checkpoint.pkl"
+    trainer.save_checkpoint(checkpoint_path)
+
+    restored = NeatTrainer.load_checkpoint(
+        checkpoint_path, DummyEnvironment, DummyObjective(), RunConfig()
+    )
+    population = restored._population
+    assert next(population.reproduction.genome_indexer) > max(population.population)
+    assert next(population.species.indexer) > max(
+        s.key for s in population.species.species.values()
+    )
+    node_keys = {key for genome in population.population.values() for key in genome.nodes}
+    assert next(restored._neat_config.genome_config.node_indexer) > max(node_keys)
+    # Lineage is real data, not a counter, so it is persisted rather than re-derived: every
+    # live genome still has its recorded ancestry after the round trip.
+    assert set(population.population) <= set(population.reproduction.ancestors)
+
+
+def test_save_checkpoint_emits_no_deprecation_warning(tmp_path: Path) -> None:
+    # Pickling `itertools.count` objects (NEAT's genome/species indexers) raises a
+    # DeprecationWarning today and a TypeError on Python 3.14; the checkpoint payload must
+    # therefore carry no raw `itertools` objects.
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    next(trainer.run())
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        trainer.save_checkpoint(tmp_path / "checkpoint.pkl")
+    assert [w for w in caught if "itertools" in str(w.message)] == []
+
+
+def test_checkpoint_round_trip_restores_champion_dir(tmp_path: Path) -> None:
+    champion_dir = tmp_path / "champions"
+    trainer = NeatTrainer(
+        DummyEnvironment,
+        DummyObjective(),
+        RunConfig(),
+        population_size=5,
+        champion_dir=champion_dir,
+    )
+    next(trainer.run())
+    checkpoint_path = tmp_path / "checkpoint.pkl"
+    trainer.save_checkpoint(checkpoint_path)
+
+    restored = NeatTrainer.load_checkpoint(
+        checkpoint_path, DummyEnvironment, DummyObjective(), RunConfig()
+    )
+    next(restored.run())
+    assert sorted(p.name for p in champion_dir.iterdir()) == ["gen_00000.pkl", "gen_00001.pkl"]
+
+
+def test_checkpoint_round_trip_recreates_a_missing_champion_dir(tmp_path: Path) -> None:
+    champion_dir = tmp_path / "champions"
+    trainer = NeatTrainer(
+        DummyEnvironment,
+        DummyObjective(),
+        RunConfig(),
+        population_size=5,
+        champion_dir=champion_dir,
+    )
+    next(trainer.run())
+    checkpoint_path = tmp_path / "checkpoint.pkl"
+    trainer.save_checkpoint(checkpoint_path)
+    (champion_dir / "gen_00000.pkl").unlink()
+    champion_dir.rmdir()
+
+    restored = NeatTrainer.load_checkpoint(
+        checkpoint_path, DummyEnvironment, DummyObjective(), RunConfig()
+    )
+    next(restored.run())
+    assert sorted(p.name for p in champion_dir.iterdir()) == ["gen_00001.pkl"]
+
+
+def test_checkpoint_round_trip_continues_cumulative_sim_time(tmp_path: Path) -> None:
+    config = RunConfig(max_generation_steps=10)
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), config, population_size=5)
+    run = trainer.run()
+    next(run)
+    before = next(run).sim_time
+    checkpoint_path = tmp_path / "checkpoint.pkl"
+    trainer.save_checkpoint(checkpoint_path)
+
+    restored = NeatTrainer.load_checkpoint(
+        checkpoint_path, DummyEnvironment, DummyObjective(), RunConfig(max_generation_steps=10)
+    )
+    after = next(restored.run()).sim_time
+    assert after > before  # cumulative sim_time continues, it does not restart from zero
+
+
+def test_load_checkpoint_refuses_a_shape_mismatched_environment(tmp_path: Path) -> None:
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    next(trainer.run())
+    checkpoint_path = tmp_path / "checkpoint.pkl"
+    trainer.save_checkpoint(checkpoint_path)
+
+    class WiderEnvironment(DummyEnvironment):
+        observation_space: Space = Box(-1.0, 1.0, (7,))
+
+    with pytest.raises(IncompatibleDescriptorsError, match="observation space"):
+        NeatTrainer.load_checkpoint(
+            checkpoint_path, WiderEnvironment, DummyObjective(), RunConfig()
+        )
+
+    class DifferentActionEnvironment(DummyEnvironment):
+        action_space: Space = Box(-1.0, 1.0, (4,))
+
+    with pytest.raises(IncompatibleDescriptorsError, match="action space"):
+        NeatTrainer.load_checkpoint(
+            checkpoint_path, DifferentActionEnvironment, DummyObjective(), RunConfig()
+        )
+
+
+def test_champion_metrics_come_from_the_environments_own_info(tmp_path: Path) -> None:
+    # The backend must not assume car-ness: champion metrics are whatever numeric keys the
+    # environment's `info` dict actually carries, not a hard-coded car-specific key set.
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    update = next(trainer.run())
+    assert set(update.champion_metrics) == {"t"}
+    assert update.champion_metrics["t"] > 0.0
+
+
+def test_champion_metrics_keep_only_the_numeric_info_values() -> None:
+    class MixedInfoEnvironment(DummyEnvironment):
+        def step(self, action: np.ndarray) -> tuple[np.ndarray, bool, bool, dict[str, typing.Any]]:
+            observation, terminated, truncated, _ = super().step(action)
+            info: dict[str, typing.Any] = {
+                "flag": True,
+                "count": 3,
+                "ratio": 0.25,
+                "numpy_scalar": np.float32(1.5),
+                "name": "not-a-metric",
+                "vector": np.zeros(2),
+            }
+            return observation, terminated, truncated, info
+
+    trainer = NeatTrainer(MixedInfoEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    update = next(trainer.run())
+    assert update.champion_metrics == {
+        "flag": 1.0,
+        "count": 3.0,
+        "ratio": 0.25,
+        "numpy_scalar": 1.5,
+    }
 
 
 def test_checkpoint_rejects_unknown_schema_version(tmp_path: Path) -> None:
