@@ -41,3 +41,7 @@ strict = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_defs = false
+
+[[tool.mypy.overrides]]
+module = "neat.*"
+ignore_missing_imports = true
