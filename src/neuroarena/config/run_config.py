@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from neuroarena.sim.observation import SensorConfig
+from neuroarena.sim.physics import PhysicsConstants
 
 SCHEMA_VERSION = 1
 
@@ -24,4 +27,6 @@ class RunConfig:
     max_episode_steps: int = 3000
     max_generations: int | None = None
     target_fitness: float | None = None
+    sensor_config: SensorConfig = field(default_factory=SensorConfig)
+    physics_constants: PhysicsConstants = field(default_factory=PhysicsConstants)
     schema_version: int = SCHEMA_VERSION

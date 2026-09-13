@@ -1,4 +1,6 @@
 from neuroarena.config import SCHEMA_VERSION, RunConfig
+from neuroarena.sim.observation import SensorConfig
+from neuroarena.sim.physics import PhysicsConstants
 
 
 def test_defaults():
@@ -58,3 +60,20 @@ def test_max_generations_and_target_fitness_are_settable() -> None:
     config = RunConfig(max_generations=50, target_fitness=1000.0)
     assert config.max_generations == 50
     assert config.target_fitness == 1000.0
+
+
+def test_sensor_config_defaults_to_the_platform_standard() -> None:
+    assert RunConfig().sensor_config == SensorConfig()
+
+
+def test_physics_constants_defaults_to_the_platform_standard() -> None:
+    assert RunConfig().physics_constants == PhysicsConstants()
+
+
+def test_sensor_config_and_physics_constants_are_settable() -> None:
+    config = RunConfig(
+        sensor_config=SensorConfig(ray_angles_deg=(-30.0, 30.0)),
+        physics_constants=PhysicsConstants(max_speed=500.0),
+    )
+    assert config.sensor_config.ray_angles_deg == (-30.0, 30.0)
+    assert config.physics_constants.max_speed == 500.0

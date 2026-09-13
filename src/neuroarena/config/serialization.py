@@ -5,6 +5,8 @@ import json
 from typing import Any
 
 from neuroarena.config.run_config import SCHEMA_VERSION, RunConfig
+from neuroarena.sim.observation import SensorConfig
+from neuroarena.sim.physics import PhysicsConstants
 
 
 class UnknownSchemaVersionError(ValueError):
@@ -38,4 +40,17 @@ def loads(text: str) -> RunConfig:
         raw = migrate(raw)
         raw["schema_version"] = SCHEMA_VERSION
     known = {f.name for f in dataclasses.fields(RunConfig)}
-    return RunConfig(**{k: v for k, v in raw.items() if k in known})
+    kwargs = {k: v for k, v in raw.items() if k in known}
+    if isinstance(kwargs.get("sensor_config"), dict):
+        kwargs["sensor_config"] = _sensor_config_from_dict(kwargs["sensor_config"])
+    if isinstance(kwargs.get("physics_constants"), dict):
+        kwargs["physics_constants"] = PhysicsConstants(**kwargs["physics_constants"])
+    return RunConfig(**kwargs)
+
+
+def _sensor_config_from_dict(raw: dict[str, Any]) -> SensorConfig:
+    # `json.loads` decodes a JSON array as a `list`, but `SensorConfig.ray_angles_deg` is
+    # typed `tuple[float, ...]` — reconstruct it as a tuple explicitly, or a round-tripped
+    # RunConfig would carry a list where a tuple is expected (breaks equality/hashing
+    # elsewhere `SensorConfig` is compared or hashed).
+    return SensorConfig(**{**raw, "ray_angles_deg": tuple(raw["ray_angles_deg"])})
