@@ -40,3 +40,6 @@ yarn-error.log*
 
 # --- Runtime data ---
 data/
+
+# --- Local worktrees (superpowers subagent-driven-development) ---
+.worktrees/
