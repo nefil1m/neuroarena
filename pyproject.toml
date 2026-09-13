@@ -8,6 +8,7 @@ dependencies = ["numpy>=1.26", "arcade>=3.0", "neat-python>=0.92,<1.0"]
 [project.scripts]
 neuroarena-play = "neuroarena.render.play:main"
 neuroarena-track-gen = "neuroarena.tracks.cli:main"
+neuroarena-train = "neuroarena.persistence.cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8.0", "ruff>=0.6", "mypy>=1.11", "pre-commit>=3.8"]
