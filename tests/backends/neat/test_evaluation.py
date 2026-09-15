@@ -1,48 +1,81 @@
-from neuroarena.backends.neat.evaluation import StepBudget, evaluate_genome
+from neuroarena.backends.neat.evaluation import BatchEntry, StepBudget, evaluate_batch
 from tests.interfaces.doubles import DummyEnvironment, DummyModel, DummyObjective
 
 
-def test_evaluate_genome_runs_until_env_truncates() -> None:
+def _entry(genome_id: int, objective: DummyObjective | None = None) -> BatchEntry:
     env = DummyEnvironment()
     model = DummyModel(env.observation_space, env.action_space)
-    objective = DummyObjective()
+    return BatchEntry(
+        genome_id=genome_id, model=model, env=env, objective=objective or DummyObjective(), seed=0
+    )
+
+
+def test_evaluate_batch_runs_a_single_genome_until_env_truncates() -> None:
     budget = StepBudget(remaining=100)
-    result = evaluate_genome(model, env, objective, budget, seed=0)
+    results = evaluate_batch([_entry(0)], budget)
     # DummyEnvironment truncates after 5 steps (see tests/interfaces/doubles.py).
-    assert result.fitness == 5.0
-    assert result.final_info == {"t": 5}
+    assert results[0].fitness == 5.0
+    assert results[0].final_info == {"t": 5}
     assert budget.remaining == 95
 
 
-def test_evaluate_genome_force_truncates_when_budget_runs_out_mid_episode() -> None:
-    env = DummyEnvironment()
-    model = DummyModel(env.observation_space, env.action_space)
-    objective = DummyObjective()
+def test_evaluate_batch_force_truncates_a_single_genome_when_budget_runs_out_mid_episode() -> None:
     budget = StepBudget(remaining=3)
-    result = evaluate_genome(model, env, objective, budget, seed=0)
-    assert result.fitness == 3.0
+    results = evaluate_batch([_entry(0)], budget)
+    assert results[0].fitness == 3.0
     assert budget.remaining == 0
 
 
-def test_evaluate_genome_scores_zero_when_budget_is_already_exhausted() -> None:
-    env = DummyEnvironment()
-    model = DummyModel(env.observation_space, env.action_space)
-    objective = DummyObjective()
+def test_evaluate_batch_scores_zero_when_budget_is_already_exhausted() -> None:
     budget = StepBudget(remaining=0)
-    result = evaluate_genome(model, env, objective, budget, seed=0)
-    assert result.fitness == 0.0
-    assert result.final_info == {}
+    results = evaluate_batch([_entry(0)], budget)
+    assert results[0].fitness == 0.0
+    assert results[0].final_info == {}
 
 
-def test_evaluate_genome_stops_early_when_objective_says_stop() -> None:
+def test_evaluate_batch_stops_a_single_genome_early_when_objective_says_stop() -> None:
     class StopsImmediately(DummyObjective):
         def should_stop(self) -> bool:
             return True
 
-    env = DummyEnvironment()
-    model = DummyModel(env.observation_space, env.action_space)
-    objective = StopsImmediately()
     budget = StepBudget(remaining=100)
-    result = evaluate_genome(model, env, objective, budget, seed=0)
-    assert result.fitness == 1.0
+    results = evaluate_batch([_entry(0, StopsImmediately())], budget)
+    assert results[0].fitness == 1.0
     assert budget.remaining == 99
+
+
+def test_evaluate_batch_force_truncates_every_other_genome_the_instant_one_finishes() -> None:
+    class SucceedsAfterTwoSteps(DummyObjective):
+        def should_stop(self) -> bool:
+            return self._steps >= 2
+
+    # Iteration order matters: `early` is processed before the finisher within a round and so
+    # keeps the round-2 step it already took; `late` is processed after and does not get one.
+    entries = [
+        _entry(genome_id=10),  # "early" — never stops on its own
+        _entry(genome_id=20, objective=SucceedsAfterTwoSteps()),  # "finisher"
+        _entry(genome_id=30),  # "late" — never stops on its own
+    ]
+    budget = StepBudget(remaining=100)
+    results = evaluate_batch(entries, budget)
+
+    assert results[10].fitness == 2.0  # processed before the finisher this round: kept its step
+    assert results[20].fitness == 2.0  # the finisher itself
+    assert results[30].fitness == 1.0  # processed after the finisher this round: cut off first
+    assert budget.remaining == 95  # 2 + 2 + 1 = 5 steps consumed
+
+
+def test_evaluate_batch_consumes_the_shared_budget_evenly_round_by_round() -> None:
+    # None of these three genomes reach their own natural end (DummyEnvironment truncates at
+    # 5 steps each) before the tight budget below runs out. Round-robin means the budget is
+    # spent one step per genome per round, not front-loaded onto whichever genome runs first.
+    entries = [_entry(genome_id=0), _entry(genome_id=1), _entry(genome_id=2)]
+    budget = StepBudget(remaining=7)
+    results = evaluate_batch(entries, budget)
+
+    # Round 1 (budget 7->4): all three step once. Round 2 (budget 4->1): all three step again.
+    # Round 3 (budget 1->0): only genome 0 gets its turn before the budget runs out.
+    assert results[0].fitness == 3.0
+    assert results[1].fitness == 2.0
+    assert results[2].fitness == 2.0
+    assert budget.remaining == 0
