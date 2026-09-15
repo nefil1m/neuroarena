@@ -359,3 +359,37 @@ def test_target_fitness_wins_over_a_distant_max_generations() -> None:
     trainer = NeatTrainer(DummyEnvironment, DummyObjective(), config, population_size=5)
     updates = list(trainer.run())
     assert [u.progress_index for u in updates] == [0]
+
+
+def test_each_genome_gets_its_own_environment_instance() -> None:
+    constructed: list[DummyEnvironment] = []
+
+    def make_env() -> DummyEnvironment:
+        env = DummyEnvironment()
+        constructed.append(env)
+        return env
+
+    trainer = NeatTrainer(make_env, DummyObjective(), RunConfig(), population_size=5)
+    next(trainer.run())
+    # Two non-genome instances (one in __init__ for descriptors/checkpoint metadata, one at
+    # the start of _run_one_generation) plus one per genome — never one instance reused
+    # across all five, which concurrent round-robin evaluation requires.
+    assert len(constructed) == 7
+    assert len(set(map(id, constructed))) == 7
+
+
+def test_each_genome_gets_its_own_objective_instance() -> None:
+    seen_ids: list[int] = []
+
+    class TrackingObjective(DummyObjective):
+        def reset(self) -> None:
+            super().reset()
+            seen_ids.append(id(self))
+
+    trainer = NeatTrainer(DummyEnvironment, TrackingObjective(), RunConfig(), population_size=5)
+    next(trainer.run())
+    # The `Objective` passed to `NeatTrainer.__init__` is never reset/used directly during a
+    # generation — only per-genome deep copies of it are, so concurrent genomes never share
+    # one mutable Objective instance the way sequential evaluation could get away with.
+    assert len(seen_ids) == 5
+    assert len(set(seen_ids)) == 5
