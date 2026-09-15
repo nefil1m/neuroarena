@@ -4,17 +4,21 @@ under a per-generation step budget shared across the batch. See
 `../../../docs/phases/phase-4-learning-backend-neat.md` for the requirements this implements,
 in particular why track switches only take effect at a generation boundary, why a
 force-truncated genome is scored on partial progress rather than penalised, and why any
-genome finishing ends the whole batch immediately for the rest."""
+genome finishing ends the whole batch immediately for the rest. `update_config` (Phase 0)
+lets a caller stage a live-changeable config field mid-`run()`, applied atomically at the
+next generation boundary — see that method's own docstring for exactly which fields."""
 
 from __future__ import annotations
 
 import copy
+import dataclasses
 import itertools
 import numbers
 import pickle
 import random
+import threading
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -40,6 +44,11 @@ if TYPE_CHECKING:
 # descriptors, and drops the (unpicklable-from-3.14) `itertools.count` species indexer.
 _CHECKPOINT_SCHEMA_VERSION = 2
 
+# Phase 5's Knob classification names more live-changeable `RunConfig` fields than this
+# trainer actually re-reads per generation; only these three are wired to `update_config`
+# today — see `update_config`'s own docstring for why the rest are excluded.
+_LIVE_CHANGEABLE_FIELDS = frozenset({"max_generation_steps", "max_generations", "target_fitness"})
+
 
 class NeatTrainer:
     """Satisfies `Trainer`. `self._env` is rebuilt once per generation (used for observation/
@@ -63,6 +72,10 @@ class NeatTrainer:
         self._make_env = make_env
         self._objective = objective
         self._config = config
+        # Guards `_pending_config_update` — `update_config` may be called from a different
+        # thread than the one driving `run()` (Phase 0's `Trainer.update_config` contract).
+        self._config_lock = threading.Lock()
+        self._pending_config_update: dict[str, Any] | None = None
         self._champion_dir = champion_dir
         if champion_dir is not None:
             champion_dir.mkdir(parents=True, exist_ok=True)
@@ -90,6 +103,38 @@ class NeatTrainer:
         self._generation = 0
         self._total_sim_steps = 0.0
         self._wall_start = time.perf_counter()
+
+    def update_config(self, partial: Mapping[str, Any]) -> None:
+        """Satisfies `Trainer.update_config` (Phase 0). Thread-safe: safe to call from a
+        different thread than the one driving `run()` — e.g. a dashboard request handler.
+        The change is staged, not applied in place, and is applied atomically at the top of
+        `_run_one_generation`'s next call, so a generation already in progress when this is
+        called is never affected — only the *next* generation sees it.
+
+        Only the three `RunConfig` fields `NeatTrainer` already re-reads fresh every
+        generation are supported today — see Phase 5's Knob classification
+        (`../../../docs/phases/phase-5-training-controls.md`) for the full live-changeable
+        list. The rest of that list is deliberately not wired here yet: `neat_hyperparameters`
+        needs careful handling of live `neat-python` internal state (id allocators, speciation
+        bookkeeping) that Phase 5 itself left as an open question; `physics_constants`,
+        `max_episode_steps`, `track_id`, and `sim_speed` only take effect through the
+        caller-supplied `make_env` closure, which `NeatTrainer` does not control and cannot
+        push a live update into."""
+        unsupported = set(partial) - _LIVE_CHANGEABLE_FIELDS
+        if unsupported:
+            raise ValueError(
+                f"NeatTrainer.update_config does not support {sorted(unsupported)} yet — "
+                f"only {sorted(_LIVE_CHANGEABLE_FIELDS)} are wired. neat_hyperparameters "
+                "needs careful handling of live neat-python internal state not yet designed; "
+                "physics_constants/max_episode_steps/track_id/sim_speed only take effect "
+                "through the caller-supplied make_env closure, which NeatTrainer does not "
+                "control."
+            )
+        with self._config_lock:
+            self._pending_config_update = {
+                **(self._pending_config_update or {}),
+                **dict(partial),
+            }
 
     def run(self) -> Iterator[TrainingUpdate]:
         while True:
@@ -119,6 +164,10 @@ class NeatTrainer:
         return False
 
     def _run_one_generation(self) -> TrainingUpdate:
+        with self._config_lock:
+            if self._pending_config_update is not None:
+                self._config = dataclasses.replace(self._config, **self._pending_config_update)
+                self._pending_config_update = None
         self._env = self._make_env()
         step_budget = StepBudget(remaining=self._config.max_generation_steps)
         champion = _ChampionTracker()

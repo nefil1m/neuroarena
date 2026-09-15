@@ -1,4 +1,5 @@
 import random
+import threading
 import typing
 import warnings
 from pathlib import Path
@@ -410,3 +411,89 @@ def test_each_genome_gets_its_own_objective_instance() -> None:
     # one mutable Objective instance the way sequential evaluation could get away with.
     assert len(seen_ids) == 5
     assert len(set(seen_ids)) == 5
+
+
+def test_update_config_rejects_unsupported_fields() -> None:
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    with pytest.raises(ValueError, match="population_size"):
+        trainer.update_config({"population_size": 10})
+    with pytest.raises(ValueError, match="neat_hyperparameters"):
+        trainer.update_config({"neat_hyperparameters": {"compatibility_threshold": 1.0}})
+
+
+def test_update_config_applies_starting_the_next_generation_not_immediately() -> None:
+    config = RunConfig(max_generation_steps=300_000)
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), config, population_size=5)
+    run = trainer.run()
+    gen0 = next(run)
+    # DummyEnvironment truncates every genome at 5 steps, DummyObjective never should_stop()s,
+    # so all 5 genomes run their full natural length under the original, generous budget.
+    assert gen0.sim_time == 25.0
+
+    trainer.update_config({"max_generation_steps": 7})
+    gen1 = next(run)
+    # Round-robin distributes a tight budget=7 across 5 genomes: round 1 (7->2, all 5 step),
+    # round 2 (2->0, only 2 of the 5 get a second step before the budget runs out) = 7 total.
+    assert gen1.sim_time - gen0.sim_time == 7.0
+
+
+def test_update_config_merges_multiple_pending_updates_before_they_apply() -> None:
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    trainer.update_config({"max_generations": 2})
+    # Deliberately unreachable on its own (DummyObjective's fitness never exceeds 5.0) — if
+    # this call silently clobbered the max_generations update above instead of merging with
+    # it, the run would never stop and this test would hang until pytest's own timeout.
+    trainer.update_config({"target_fitness": 1_000_000.0})
+    updates = list(trainer.run())
+    assert [u.progress_index for u in updates] == [0, 1]
+
+
+def test_update_config_does_not_affect_a_generation_already_in_progress() -> None:
+    started = threading.Event()
+    release = threading.Event()
+
+    class PausesOnFirstUpdateCall(DummyObjective):
+        _paused = False
+
+        def update(
+            self,
+            observation: np.ndarray,
+            action: np.ndarray,
+            terminated: bool,
+            truncated: bool,
+            info: dict[str, typing.Any],
+        ) -> None:
+            super().update(observation, action, terminated, truncated, info)
+            if not PausesOnFirstUpdateCall._paused:
+                PausesOnFirstUpdateCall._paused = True
+                started.set()
+                assert release.wait(timeout=5), "test deadlocked waiting for release"
+
+    config = RunConfig(max_generation_steps=300_000)
+    trainer = NeatTrainer(DummyEnvironment, PausesOnFirstUpdateCall(), config, population_size=5)
+    run = trainer.run()
+
+    results: list[TrainingUpdate] = []
+
+    def drive_generation_zero() -> None:
+        results.append(next(run))
+
+    thread = threading.Thread(target=drive_generation_zero)
+    thread.start()
+    assert started.wait(timeout=5), "generation 0 never reached its first genome step"
+
+    # Called from this (main) thread while generation 0 is paused mid-step in the background
+    # thread above — this is the concurrent-call scenario update_config must handle safely.
+    trainer.update_config({"max_generation_steps": 7})
+    release.set()
+    thread.join(timeout=5)
+    assert not thread.is_alive(), "background generation never finished"
+
+    gen0 = results[0]
+    # Generation 0's step_budget was already captured from the ORIGINAL config before the
+    # pause; the concurrent update must not retroactively shrink a generation in progress.
+    assert gen0.sim_time == 25.0
+
+    gen1 = next(run)
+    # The staged update only takes effect starting the next generation boundary.
+    assert gen1.sim_time - gen0.sim_time == 7.0
