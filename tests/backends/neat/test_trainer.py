@@ -413,6 +413,15 @@ def test_each_genome_gets_its_own_objective_instance() -> None:
     assert len(set(seen_ids)) == 5
 
 
+def test_live_changeable_fields_are_real_run_config_fields() -> None:
+    import dataclasses
+
+    from neuroarena.backends.neat.trainer import _LIVE_CHANGEABLE_FIELDS
+
+    real_fields = {f.name for f in dataclasses.fields(RunConfig)}
+    assert _LIVE_CHANGEABLE_FIELDS <= real_fields
+
+
 def test_update_config_rejects_unsupported_fields() -> None:
     trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
     with pytest.raises(ValueError, match="population_size"):

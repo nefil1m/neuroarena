@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
@@ -86,6 +86,8 @@ class Trainer(Protocol):
     """A learning backend. Consumes Environment + Model + Objective + RunConfig only."""
 
     def run(self) -> Iterator[TrainingUpdate]: ...
+
+    def update_config(self, partial: Mapping[str, Any]) -> None: ...
 
     def save_checkpoint(self, path: Path) -> None: ...
 

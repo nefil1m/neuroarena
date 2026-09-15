@@ -117,18 +117,53 @@ class NeatTrainer:
         list. The rest of that list is deliberately not wired here yet: `neat_hyperparameters`
         needs careful handling of live `neat-python` internal state (id allocators, speciation
         bookkeeping) that Phase 5 itself left as an open question; `physics_constants`,
-        `max_episode_steps`, `track_id`, and `sim_speed` only take effect through the
-        caller-supplied `make_env` closure, which `NeatTrainer` does not control and cannot
-        push a live update into."""
+        `max_episode_steps`, and `track_id` only take effect through the caller-supplied
+        `make_env` closure, which `NeatTrainer` does not control and cannot push a live update
+        into. `sim_speed` is excluded for a different reason, not this closure one: it has no
+        consumer anywhere in this codebase yet — `RunConfig`'s own docstring already documents
+        it as a stub field — so there is nothing for a live update to affect, in `NeatTrainer`
+        or anywhere else.
+
+        Three things this method deliberately does NOT do:
+
+        - **Settings history:** a live call here is NOT recorded in Phase 6's
+          settings-history table (`persistence/settings_history_repo.py` is only written once,
+          at run start, by `persistence/recorder.py`) — so a resumed run's "last-known
+          settings" will not reflect a live update that was never logged. This is a known gap
+          for whoever wires `update_config` into the persistence layer (Phase 6/7), not
+          something fixed here.
+        - **Checkpoints:** `save_checkpoint`/`load_checkpoint` correctly do not persist
+          `_config_lock` (unpicklable) or `_pending_config_update` — a checkpoint carries no
+          `RunConfig` at all, `load_checkpoint` takes a fresh one from its caller. A
+          staged-but-not-yet-applied update at the moment of a checkpoint save is silently
+          dropped (it was never in effect, so this is arguably correct) — noted explicitly here
+          rather than left undiscoverable.
+        - **Value validation:** this method validates which *keys* are supported, but not the
+          *type* of the values passed for them (e.g. a string where an int is expected) — a bad
+          value is accepted silently and only fails later, inside `_run_one_generation`,
+          permanently closing the `run()` generator. Deliberate, not an oversight: value-type
+          validation belongs at whatever caller boundary actually receives untyped input (e.g.
+          Phase 7's future dashboard API, parsing JSON/form data), not duplicated here where
+          every current caller is already-typed Python.
+
+        **Stop-condition timing:** a live `max_generations`/`target_fitness` update is checked
+        by `_should_auto_stop` (which runs right after a generation's `TrainingUpdate` is
+        yielded, before the next generation starts) against whichever `self._config` was in
+        effect for the generation that JUST finished — so from a second thread, whether a given
+        `update_config` call's new stop threshold affects "this decision" or "the next one"
+        depends on exactly when it lands relative to the generation boundary, which is not
+        deterministic from the caller's side. This is consistent with the documented "applied
+        at the next generation boundary" contract, just worth naming explicitly."""
         unsupported = set(partial) - _LIVE_CHANGEABLE_FIELDS
         if unsupported:
             raise ValueError(
                 f"NeatTrainer.update_config does not support {sorted(unsupported)} yet — "
                 f"only {sorted(_LIVE_CHANGEABLE_FIELDS)} are wired. neat_hyperparameters "
                 "needs careful handling of live neat-python internal state not yet designed; "
-                "physics_constants/max_episode_steps/track_id/sim_speed only take effect "
-                "through the caller-supplied make_env closure, which NeatTrainer does not "
-                "control."
+                "physics_constants/max_episode_steps/track_id only take effect through the "
+                "caller-supplied make_env closure, which NeatTrainer does not control; "
+                "sim_speed has no consumer anywhere in this codebase yet (a stub RunConfig "
+                "field), which is a separate reason from the make_env-closure one above."
             )
         with self._config_lock:
             self._pending_config_update = {
@@ -165,7 +200,7 @@ class NeatTrainer:
 
     def _run_one_generation(self) -> TrainingUpdate:
         with self._config_lock:
-            if self._pending_config_update is not None:
+            if self._pending_config_update:
                 self._config = dataclasses.replace(self._config, **self._pending_config_update)
                 self._pending_config_update = None
         self._env = self._make_env()

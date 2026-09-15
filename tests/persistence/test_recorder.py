@@ -1,5 +1,6 @@
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -42,6 +43,9 @@ class _FakeTrainer:
         self.save_checkpoint_calls.append(path)
         path.write_bytes(b"resume")
 
+    def update_config(self, partial: Mapping[str, Any]) -> None:
+        raise NotImplementedError  # unused by the recorder; present only for Trainer conformance
+
     @classmethod
     def load_checkpoint(cls, path, make_env, objective, config):
         raise NotImplementedError  # unused by the recorder; present only for Trainer conformance
@@ -63,6 +67,9 @@ class _CrashingTrainer:
 
     def save_checkpoint(self, path: Path) -> None:
         pass
+
+    def update_config(self, partial: Mapping[str, Any]) -> None:
+        raise NotImplementedError  # unused by the recorder; present only for Trainer conformance
 
     @classmethod
     def load_checkpoint(cls, path, make_env, objective, config):
@@ -87,6 +94,9 @@ class _InterruptedTrainer:
 
     def save_checkpoint(self, path: Path) -> None:
         pass
+
+    def update_config(self, partial: Mapping[str, Any]) -> None:
+        raise NotImplementedError  # unused by the recorder; present only for Trainer conformance
 
     @classmethod
     def load_checkpoint(cls, path, make_env, objective, config):
