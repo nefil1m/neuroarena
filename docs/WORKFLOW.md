@@ -29,6 +29,7 @@ Every doc carries one status marker near the top:
 - **NOT STARTED** — stub only; no requirements exploration has happened yet
 - **DRAFT** — actively being explored, contents can change freely
 - **FINALIZED** — decided; changing it requires a deliberate revision, not a drive-by edit mid-conversation about something else
+- **REVISED** — a FINALIZED doc went through a deliberate revision (its requirements are decided, current, and still FINALIZED in that sense) but the code that was already built against the old requirements does not yet match — an implementation pass is owed before the phase is actually complete again. Treat the requirements as settled for planning purposes; don't treat the phase as done. Revert to FINALIZED once the matching implementation pass lands (say so explicitly in the Revision history entry that closes it out).
 - **SUPERSEDED** — replaced by a linked doc; kept for history, not deleted
 
 ## Session start checklist
@@ -68,6 +69,7 @@ This applies most heavily during requirements exploration. Once a phase is FINAL
 Docs drifting out of sync with reality *during* a session is expected and fine — that's what exploration looks like. What's not fine is ending a session with that drift unresolved. Every doc touched by a decision made this session gets updated before the session is considered closed.
 
 ## Revision history
+- 2026-09-15 — Added the **REVISED** status label, between FINALIZED and SUPERSEDED — for a FINALIZED doc whose requirements changed via a deliberate revision but whose already-built code doesn't match yet. Reason: Phase 4 was revised the same day (concurrent-batch evaluation) without its code catching up, and marking it plain FINALIZED would look identical to a phase that's actually done, risking the gap going unnoticed once later phases start. See Phase 4's and Phase 0's own Revision history for the concrete case.
 - 2026-09-09 — Initial workflow doc created.
 - 2026-09-09 — Added the NOT STARTED status label — for stub docs where no requirements exploration has happened yet, distinct from DRAFT — and added a Decision provenance section. Before this the Session-end checklist said only "add a line to the Revision History" with no rule for what that line should contain (supersedes 7a46fd6).
 - 2026-09-10 — Rewrote the Decision provenance rule. It previously required each revision-history entry to be a bare label plus the superseded commit hash, with the rationale and old values deliberately left out ("history lives in git"). Entries must now be self-contained prose — what changed, from what to what, and why — understandable without running git. Existing thin entries across all docs were backfilled to this standard. Reason: the project spans many sessions with memory resets, so the docs themselves must carry the reasoning, not just point at commits.

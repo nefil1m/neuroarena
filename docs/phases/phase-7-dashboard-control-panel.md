@@ -6,24 +6,27 @@ Status: **DRAFT** — requirements seeded from the 2026-09-09 platform decisions
 The first dashboard slice: run control and live scalar metrics, working while the sim runs headless.
 
 ## Requirements
-Carried over from the 2026-09-09 decisions pass. Dedicated exploration still needed before FINALIZED.
+Carried over from the 2026-09-09 decisions pass, plus decisions from the 2026-09-14 exploration pass (interrupted mid-session, recovered on 2026-09-15 from the local session transcript rather than lost — see Revision history). Not yet FINALIZED: the metric push cadence/schema is still genuinely open, and one dependency (Phase 0's `Trainer.update_config`, and Phase 4's `NeatTrainer` actually implementing it) is decided and documented but not yet implemented.
 
-- **Stack:** FastAPI + WebSocket backend, React frontend. The trainer and dashboard communicate only over the HTTP/WebSocket API — no shared memory.
-- **Features:**
-  - Start / stop / pause a training run.
-  - Live scalar metrics: generation #, best & mean fitness, alive count, sim-time vs wall-time, current sim speed.
-  - Live edit of the live-changeable config subset (defined in Phase 5).
+- **Stack:** FastAPI + WebSocket backend, React frontend. "No shared memory" describes the browser↔backend link only.
+- **Process model:** the dashboard backend **embeds the trainer in-process** — the FastAPI process itself drives `NeatTrainer.run()` on a background thread/asyncio task and holds the live `Trainer` object in memory. A live config change is therefore a direct in-process call, not IPC. Trade-off accepted: one training run per backend process; multi-process support is not in scope for this phase. This also **resolves** the former "how does the dashboard discover/attach to a running trainer" open question — there is nothing external to discover, the trainer only exists inside a running backend process.
+- **Live config updates go through the Phase 0 `Trainer` protocol, not backend-specific glue:** `Trainer` gains a `update_config(partial)` method — thread-safe, stages a pending change, applied atomically at the top of the next generation. Keeps Phase 7 backend-agnostic (NEAT now, Phase 10's RL backend later implements the same method) rather than poking `NeatTrainer` internals directly. Applied to Phase 0's own doc on 2026-09-15 (status → REVISED there) — the Protocol now carries this method, but `NeatTrainer` does not implement it yet, so Phase 7 still can't build against it until that implementation lands.
+- **Full resume flow from the dashboard**, not just fresh starts: starting a run offers "new model" or "resume existing model" (from Phase 6's model list). Resuming pre-fills the form with the model's last-known settings (Phase 6's "opens with most recent settings" rule) and surfaces current generation vs. `max_generations`/`target_fitness` so they can be raised before starting — avoids the "trains one more generation and silently stops" trap Phase 6 flagged for this phase to fix.
+- **Live scalar metrics — revised for Phase 4's 2026-09-15 concurrent-batch evaluation model** (a generation's whole population batch starts and ends together; see `phase-4-learning-backend-neat.md`'s Revision history). There is no meaningful "genome N of population_size" sequential counter any more. While a generation is in progress: **active genomes remaining this round** (population_size minus genomes that have already crashed/finished out on their own — reaches 0, or ends the instant one genome succeeds), **elapsed steps vs. the per-generation step ceiling**, and **best fitness-so-far among genomes that have already finished or crashed out**. Once a generation completes: generation #, best & mean fitness, current sim speed — **"alive count" is dropped** (leftover language from the pre-2026-09-10 shared-space design; meaningless under isolated-batch evaluation).
+  - Whether the in-progress metrics above are pushed on their own cadence or only alongside the completed-generation `TrainingUpdate` is still open — see Open questions.
+  - Also flagged, out of scope for this phase: watching the whole batch step visually in real time belongs to Phase 8, not Phase 7 (this phase has no in-browser rendering at all — see below).
+  - Live edit of the rest of the live-changeable config subset (defined in Phase 5) beyond the update-mechanism question above.
   - Basic run list + history view (data from Phase 6).
 - **No in-browser rendering in this phase** — a run is watched locally via the `arcade` renderer. The in-browser live view is Phase 8.
 - **Local-first:** binds to localhost, single user, no auth. The architecture must not preclude adding auth + remote deployment later ("local-first, remote-capable by construction").
 
 ## Open questions
-- Metric push cadence and the WebSocket message schema.
-- How the dashboard discovers and attaches to a running trainer process.
+- Metric push cadence and the WebSocket message schema — still unresolved (the *content* of live metrics is now decided above; the *timing/format* they're pushed in is not).
 
 ## Implementation plan
 _Do not write this section until Requirements above is FINALIZED._
 
 ## Revision history
+- 2026-09-15 — Recovered and recorded four decisions from the 2026-09-14 brainstorming session, which was interrupted by a shutdown before anything reached this doc (found and reconstructed from the local Claude Code session transcript, not re-decided from scratch): process model (backend embeds the trainer), live-config-update mechanism (Phase 0 `Trainer.update_config`, not yet applied to Phase 0's own doc), full resume flow, and live metrics content (superseded "alive count" — see Phase 4's 2026-09-15 revision for why). Still DRAFT: metric push cadence/schema remains open, and this doc still needs the Phase 0 dependency actually resolved before it can reach FINALIZED. Root-cause note for future sessions: this project's session-end checklist (`../WORKFLOW.md`) assumes a clean session close: writing decisions back to phase docs happened at the end of the interrupted session, not as each was made, so an abrupt shutdown lost them until this recovery. Consider writing each decision into its phase doc as soon as it's confirmed, not batched for session-end, especially for multi-hour brainstorming sessions.
 - 2026-09-09 — Stub created (as "Phase 7 — Web Dashboard", covering the whole dashboard)
 - 2026-09-09 — Split: this doc is now the control-panel slice only (live canvas → Phase 8, advanced → Phase 9); seeded requirements from the platform decisions pass; status → DRAFT
