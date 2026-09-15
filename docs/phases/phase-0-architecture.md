@@ -1,6 +1,6 @@
 # Phase 0 — Architecture Scaffolding
 
-Status: **REVISED** — requirements settled as of 2026-09-10, then deliberately revised on 2026-09-15 to add `Trainer.update_config` (Phase 7 needs it). The NEAT backend (Phase 4) does not implement it yet — see the `Trainer` interface section below. Changing the requirements further needs its own deliberate revision (see `../WORKFLOW.md`). The two items under Open questions are deferred by design and do not block.
+Status: **FINALIZED** — requirements settled as of 2026-09-10, revised 2026-09-15 to add `Trainer.update_config` (Phase 7 needs it), implemented by `NeatTrainer` the same day (for the fields it can safely support — see the `Trainer` interface section below). Changing the requirements further needs its own deliberate revision (see `../WORKFLOW.md`). The two items under Open questions are deferred by design and do not block.
 
 ## Goal
 Define the `Environment` / `Model` / `SuccessCriterion` / `Trainer` interfaces and the shared config schema — general enough for many games, not car-specific.
@@ -60,7 +60,7 @@ save_checkpoint(path) -> None
 load_checkpoint(path, make_env, objective, config) -> Trainer     # classmethod
 ```
 
-- **`update_config`** (added 2026-09-15, see Revision history) lets a live-changeable config field be updated while `run()` is already executing, without tearing the trainer down — Phase 7's dashboard needs this for live config edits. It is safe to call from another thread than the one driving `run()`: the change is staged, not applied in place, and every backend applies it atomically at the top of its own next unit of progress (NEAT: next generation boundary) so no genome/rollout ever sees a config mutate mid-evaluation. **Not yet implemented by `NeatTrainer`** — the Protocol carries the method, the NEAT backend doesn't satisfy it yet (see Phase 4's Implementation plan note).
+- **`update_config`** (added 2026-09-15, see Revision history) lets a live-changeable config field be updated while `run()` is already executing, without tearing the trainer down — Phase 7's dashboard needs this for live config edits. It is safe to call from another thread than the one driving `run()`: the change is staged, not applied in place, and every backend applies it atomically at the top of its own next unit of progress (NEAT: next generation boundary) so no genome/rollout ever sees a config mutate mid-evaluation. Implemented by `NeatTrainer` for `max_generation_steps`/`max_generations`/`target_fitness` — see [`../superpowers/plans/2026-09-15-neat-trainer-update-config.md`](../superpowers/plans/2026-09-15-neat-trainer-update-config.md). The rest of Phase 5's live-changeable knob list (`neat_hyperparameters`, `physics_constants`, `max_episode_steps`, `track_id`, `sim_speed`) is explicitly rejected by `NeatTrainer.update_config` today, not silently ignored — see that method's own docstring for why each is excluded.
 - `make_env` is a **factory**, not an instance — isolated per-genome evaluation (Phase 4) spins up many environments.
 - `run()` is an iterator so the CLI or dashboard stays in control: it pulls a `TrainingUpdate` after each step and can stop or pause between yields.
 - The trainer owns seeding: it derives per-episode seeds from the run's master seed (a `RunConfig` field) and passes them to `env.reset(seed=...)`. `make_env` only constructs.
@@ -112,6 +112,7 @@ Six tasks, each ending in an independently testable, committed deliverable:
 6. **Import-hygiene guard** — test that the core packages pull in no `gymnasium` / renderer / trainer / heavy deps.
 
 ## Revision history
+- 2026-09-15 — Implemented `Trainer.update_config` on `NeatTrainer`, for the same day's revision above — scoped to `max_generation_steps`/`max_generations`/`target_fitness` (the fields `NeatTrainer` already re-reads fresh every generation); every other Phase-5-classified live-changeable field is explicitly rejected with an error naming why, not silently accepted. Status REVISED -> FINALIZED. See [`../superpowers/plans/2026-09-15-neat-trainer-update-config.md`](../superpowers/plans/2026-09-15-neat-trainer-update-config.md).
 - 2026-09-15 — **Deliberate revision, status → REVISED** (per `../WORKFLOW.md`): added `Trainer.update_config(partial)` to the `Trainer` Protocol — a thread-safe, staged, atomically-applied-at-the-next-progress-boundary config update while `run()` is executing. Needed by Phase 7 (dashboard live config edits go through this instead of NEAT-specific glue, keeping Phase 7 backend-agnostic). Decided during Phase 7's 2026-09-14 exploration pass (recovered 2026-09-15 after that session was interrupted — see Phase 7's own Revision history). `NeatTrainer` does not implement this yet; status stays REVISED until it does.
 - 2026-09-09 — Stub created.
 - 2026-09-09 — Seeded requirements from the platform decisions pass; status → DRAFT.
