@@ -1,8 +1,10 @@
-"""The NEAT `Trainer`: drives one `neat.Population` a generation at a time, evaluating
-each genome in isolation on a shared `Environment` under a per-generation step budget.
-See `../../../docs/phases/phase-4-learning-backend-neat.md` for the requirements this
-implements, in particular why track switches only take effect at a generation boundary
-and why a force-truncated genome is scored on partial progress rather than penalised."""
+"""The NEAT `Trainer`: drives one `neat.Population` a generation at a time, evaluating a
+generation's whole batch of genomes concurrently (round-robin lockstep, see `evaluation.py`)
+under a per-generation step budget shared across the batch. See
+`../../../docs/phases/phase-4-learning-backend-neat.md` for the requirements this implements,
+in particular why track switches only take effect at a generation boundary, why a
+force-truncated genome is scored on partial progress rather than penalised, and why any
+genome finishing ends the whole batch immediately for the rest."""
 
 from __future__ import annotations
 
@@ -19,7 +21,12 @@ from typing import TYPE_CHECKING, Any
 import neat
 
 from neuroarena.backends.neat.config import build_neat_config
-from neuroarena.backends.neat.evaluation import EvaluationResult, StepBudget, evaluate_genome
+from neuroarena.backends.neat.evaluation import (
+    BatchEntry,
+    EvaluationResult,
+    StepBudget,
+    evaluate_batch,
+)
 from neuroarena.backends.neat.model import GenomeModel
 from neuroarena.interfaces.compat import IncompatibleDescriptorsError
 from neuroarena.interfaces.protocols import TrainingUpdate
@@ -35,10 +42,13 @@ _CHECKPOINT_SCHEMA_VERSION = 2
 
 
 class NeatTrainer:
-    """Satisfies `Trainer`. `make_env` is rebuilt once per generation (not per genome) so
-    every genome within one generation runs on the same `Environment` instance — cheap
-    (Phase 3's `CarEnvironment.reset()` already gives each genome a fresh `Game`) and the
-    natural point for a live track switch (Phase 5) to take effect."""
+    """Satisfies `Trainer`. `self._env` is rebuilt once per generation (used for observation/
+    action-space descriptors and checkpoint metadata) — but each genome in that generation's
+    batch gets its OWN fresh `Environment` instance from `make_env`, since concurrent
+    round-robin evaluation (see `evaluation.py`) runs every genome's episode at once, not one
+    at a time on a shared instance. `make_env`'s closure still only changes at a generation
+    boundary, so every genome within one generation is still compared on the same track (a
+    live track switch, Phase 5, takes effect for the next generation's `make_env()` calls)."""
 
     def __init__(
         self,
@@ -111,18 +121,31 @@ class NeatTrainer:
     def _run_one_generation(self) -> TrainingUpdate:
         self._env = self._make_env()
         step_budget = StepBudget(remaining=self._config.max_generation_steps)
-        fitnesses: dict[int, float] = {}
         champion = _ChampionTracker()
+        results: dict[int, EvaluationResult] = {}
 
         def fitness_function(genomes: list[tuple[int, Any]], neat_config: neat.Config) -> None:
-            for genome_id, genome in genomes:
-                model = GenomeModel(
-                    genome, neat_config, self._env.observation_space, self._env.action_space
+            entries = [
+                BatchEntry(
+                    genome_id=genome_id,
+                    model=GenomeModel(
+                        genome, neat_config, self._env.observation_space, self._env.action_space
+                    ),
+                    env=self._make_env(),
+                    # Concurrent batch evaluation needs one Objective instance per genome, not
+                    # the single shared `self._objective` sequential evaluation could reuse — a
+                    # deep copy keeps every genome's state independent for the round-robin.
+                    objective=copy.deepcopy(self._objective),
+                    seed=self._config.master_seed + genome_id,
                 )
-                seed = self._config.master_seed + genome_id
-                result = evaluate_genome(model, self._env, self._objective, step_budget, seed)
+                for genome_id, genome in genomes
+            ]
+            batch_results = evaluate_batch(entries, step_budget)
+            results.update(batch_results)
+            genome_by_id = dict(genomes)
+            for genome_id, result in batch_results.items():
+                genome = genome_by_id[genome_id]
                 genome.fitness = result.fitness
-                fitnesses[genome_id] = result.fitness
                 champion.consider(genome, result)
 
         self._population.run(fitness_function, 1)
@@ -134,7 +157,7 @@ class NeatTrainer:
             path = self._champion_dir / f"gen_{self._generation:05d}.pkl"
             path.write_bytes(pickle.dumps(champion.genome))
 
-        values = list(fitnesses.values())
+        values = [result.fitness for result in results.values()]
         update = TrainingUpdate(
             progress_index=self._generation,
             best_fitness=max(values),

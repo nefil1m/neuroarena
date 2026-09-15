@@ -105,34 +105,3 @@ def evaluate_batch(
         results[genome.genome_id] = EvaluationResult(genome.objective.fitness(), genome.last_info)
 
     return results
-
-
-def evaluate_genome(
-    model: Model,
-    env: Environment,
-    objective: Objective,
-    step_budget: StepBudget,
-    seed: int,
-) -> EvaluationResult:
-    """One episode for `model` on `env`, scored by `objective` (reset first, per Phase 0's
-    per-episode `Objective.reset()`/`Model.reset()` hooks). Consumes one unit of
-    `step_budget` per `env.step()` call; if the budget is already at zero, the genome is
-    scored on its freshly-reset state with zero steps taken — this is what lets a whole
-    generation's total step count never exceed the ceiling regardless of population size.
-
-    DEPRECATED: Use `evaluate_batch` instead. This function is kept for backward compatibility
-    during the Task 1/Task 2 transition."""
-    observation = env.reset(seed=seed)
-    model.reset()
-    objective.reset()
-    info: dict[str, Any] = {}
-    while True:
-        if step_budget.remaining <= 0:
-            break
-        action = model.act(observation)
-        observation, terminated, truncated, info = env.step(action)
-        step_budget.remaining -= 1
-        objective.update(observation, action, terminated, truncated, info)
-        if terminated or truncated or objective.should_stop():
-            break
-    return EvaluationResult(fitness=objective.fitness(), final_info=info)
