@@ -1,3 +1,7 @@
+from typing import Any
+
+import numpy as np
+
 from neuroarena.backends.neat.evaluation import BatchEntry, StepBudget, evaluate_batch
 from tests.interfaces.doubles import DummyEnvironment, DummyModel, DummyObjective
 
@@ -79,3 +83,33 @@ def test_evaluate_batch_consumes_the_shared_budget_evenly_round_by_round() -> No
     assert results[1].fitness == 2.0
     assert results[2].fitness == 2.0
     assert budget.remaining == 0
+
+
+def test_evaluate_batch_lets_each_genome_run_to_its_own_natural_end() -> None:
+    class TruncatesAfter(DummyEnvironment):
+        def __init__(self, steps: int) -> None:
+            super().__init__()
+            self._limit = steps
+
+        def step(self, action: np.ndarray) -> tuple[np.ndarray, bool, bool, dict[str, Any]]:
+            self._t += 1
+            return np.zeros(3, dtype=np.float32), False, self._t >= self._limit, {"t": self._t}
+
+    def entry(genome_id: int, steps: int) -> BatchEntry:
+        env = TruncatesAfter(steps)
+        model = DummyModel(env.observation_space, env.action_space)
+        return BatchEntry(
+            genome_id=genome_id, model=model, env=env, objective=DummyObjective(), seed=0
+        )
+
+    # DummyObjective never calls should_stop(), so nothing ever triggers the collective stop —
+    # each genome must run all the way to its own natural truncation length, completely
+    # unaffected by its shorter- or longer-lived siblings dropping out of the round-robin.
+    entries = [entry(0, 2), entry(1, 9), entry(2, 4)]
+    budget = StepBudget(remaining=100)
+    results = evaluate_batch(entries, budget)
+
+    assert results[0].fitness == 2.0
+    assert results[1].fitness == 9.0
+    assert results[2].fitness == 4.0
+    assert budget.remaining == 100 - (2 + 9 + 4)

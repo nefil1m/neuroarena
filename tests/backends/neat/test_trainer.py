@@ -46,6 +46,23 @@ def test_generation_ceiling_bounds_total_steps_per_generation() -> None:
     assert update.sim_time <= 7
 
 
+def test_a_genome_finishing_shortens_the_whole_generation() -> None:
+    class SucceedsAfterOneStep(DummyObjective):
+        def should_stop(self) -> bool:
+            return self._steps >= 1
+
+    trainer = NeatTrainer(DummyEnvironment, SucceedsAfterOneStep(), RunConfig(), population_size=5)
+    update = next(trainer.run())
+    # Every genome's Objective is an independent deep copy of the same SucceedsAfterOneStep, so
+    # every genome would succeed on its own first step. Round-robin processes genomes in order
+    # within a round: the first genome takes its one step, calls should_stop() (True), and
+    # immediately triggers the collective stop — every other genome is force-truncated before
+    # it ever takes a step of its own. Exactly one env.step() is taken across the WHOLE
+    # generation, regardless of genome ordering, so sim_time is exactly 1.0 — far below the 25
+    # (5 genomes x DummyEnvironment's natural 5-step length) a fully-independent run would take.
+    assert update.sim_time == 1.0
+
+
 def test_champion_dir_saves_one_genome_file_per_generation(tmp_path: Path) -> None:
     champion_dir = tmp_path / "champions"
     trainer = NeatTrainer(

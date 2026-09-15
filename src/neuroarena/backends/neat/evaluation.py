@@ -41,7 +41,7 @@ class BatchEntry:
 
 
 @dataclass
-class _ActiveGenome:
+class _ActiveEpisode:
     genome_id: int
     model: Model
     env: Environment
@@ -64,19 +64,25 @@ def evaluate_batch(
     round keeps the step it already took that round; one processed later does not get a
     chance to move that round. Every genome still active when the batch stops is
     force-truncated and scored on partial progress via `Objective.fitness()`, exactly like a
-    normally-ended episode, with no separate penalty term."""
-    active: list[_ActiveGenome] = []
+    normally-ended episode, with no separate penalty term. If a genome's episode ends via
+    `terminated`/`truncated` on the same tick its `Objective.should_stop()` would also have
+    fired, the episode-end takes priority: it is scored as a normal ending and does NOT
+    trigger the collective stop for the rest of the batch. This ordering is inherited
+    unchanged from the sequential evaluation this function replaced."""
+    active: list[_ActiveEpisode] = []
     for entry in entries:
         observation = entry.env.reset(seed=entry.seed)
         entry.model.reset()
         entry.objective.reset()
         active.append(
-            _ActiveGenome(entry.genome_id, entry.model, entry.env, entry.objective, observation, {})
+            _ActiveEpisode(
+                entry.genome_id, entry.model, entry.env, entry.objective, observation, {}
+            )
         )
 
     results: dict[int, EvaluationResult] = {}
     while active and step_budget.remaining > 0:
-        still_active: list[_ActiveGenome] = []
+        still_active: list[_ActiveEpisode] = []
         stop_batch = False
         for i, genome in enumerate(active):
             if step_budget.remaining <= 0:
