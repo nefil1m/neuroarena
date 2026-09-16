@@ -340,3 +340,64 @@ def test_records_the_initial_settings_diff_at_starting_generation(tmp_path: Path
     assert len(entries) == 1
     assert entries[0].run_id == record.run_id
     assert entries[0].diff == {"population_size": 42}
+
+
+def test_on_update_is_called_once_per_generation_after_persisting_it(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "test.db")
+    model_id = _model_id(conn)
+    seen: list[int] = []
+    run_and_record(
+        conn,
+        _FakeTrainer(n_generations=3),
+        model_id=model_id,
+        track_id="t1",
+        starting_generation=0,
+        resume_dir=tmp_path / "resume",
+        champion_dir=None,
+        checkpoint_every_n_generations=100,
+        champion_retention_cap=None,
+        initial_settings_diff={},
+        on_update=lambda u: seen.append(u.progress_index),
+    )
+    assert seen == [0, 1, 2]
+    # "after persisting it": every generation on_update saw is already in the DB.
+    assert len(list_generation_stats_for_model(conn, model_id)) == 3
+
+
+def test_should_stop_ends_the_run_early_with_stopped_status(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "test.db")
+    model_id = _model_id(conn)
+    record = run_and_record(
+        conn,
+        _FakeTrainer(n_generations=10),
+        model_id=model_id,
+        track_id="t1",
+        starting_generation=0,
+        resume_dir=tmp_path / "resume",
+        champion_dir=None,
+        checkpoint_every_n_generations=100,
+        champion_retention_cap=None,
+        initial_settings_diff={},
+        should_stop=lambda: True,
+    )
+    assert record.status == "stopped"
+    # Stopped after fully persisting exactly the first generation, not zero and not all ten.
+    assert len(list_generation_stats_for_model(conn, model_id)) == 1
+
+
+def test_run_without_the_new_hooks_is_unaffected(tmp_path: Path) -> None:
+    conn = connect(tmp_path / "test.db")
+    model_id = _model_id(conn)
+    record = run_and_record(
+        conn,
+        _FakeTrainer(n_generations=2),
+        model_id=model_id,
+        track_id="t1",
+        starting_generation=0,
+        resume_dir=tmp_path / "resume",
+        champion_dir=None,
+        checkpoint_every_n_generations=100,
+        champion_retention_cap=None,
+        initial_settings_diff={},
+    )
+    assert record.status == "completed"

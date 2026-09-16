@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import dataclasses
 import sqlite3
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -24,7 +25,7 @@ from neuroarena.persistence import (
 from neuroarena.persistence.runs_repo import RunRecord
 
 if TYPE_CHECKING:
-    from neuroarena.interfaces.protocols import Trainer
+    from neuroarena.interfaces.protocols import Trainer, TrainingUpdate
 
 
 def run_and_record(
@@ -39,6 +40,8 @@ def run_and_record(
     checkpoint_every_n_generations: int,
     champion_retention_cap: int | None,
     initial_settings_diff: dict[str, Any],
+    on_update: Callable[[TrainingUpdate], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> RunRecord:
     resume_dir.mkdir(parents=True, exist_ok=True)
     run_record = runs_repo.create_run(
@@ -56,6 +59,8 @@ def run_and_record(
             generation_stats_repo.record_generation_stat(
                 conn, model_id=model_id, run_id=run_record.run_id, update=update
             )
+            if on_update is not None:
+                on_update(update)
             generation = update.progress_index
 
             if generation % checkpoint_every_n_generations == 0:
@@ -82,6 +87,9 @@ def run_and_record(
                 )
                 if champion_retention_cap is not None:
                     _prune_champions(conn, model_id, champion_retention_cap)
+
+            if should_stop is not None and should_stop():
+                return _finish(conn, run_record, status="stopped")
     except KeyboardInterrupt:
         # Ctrl-C is the normal way a human ends a long headless run — it is a
         # BaseException, so `except Exception` below never sees it and the run would
