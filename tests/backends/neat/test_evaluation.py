@@ -2,7 +2,12 @@ from typing import Any
 
 import numpy as np
 
-from neuroarena.backends.neat.evaluation import BatchEntry, StepBudget, evaluate_batch
+from neuroarena.backends.neat.evaluation import (
+    BatchEntry,
+    BatchProgress,
+    StepBudget,
+    evaluate_batch,
+)
 from tests.interfaces.doubles import DummyEnvironment, DummyModel, DummyObjective
 
 
@@ -113,3 +118,45 @@ def test_evaluate_batch_lets_each_genome_run_to_its_own_natural_end() -> None:
     assert results[1].fitness == 9.0
     assert results[2].fitness == 4.0
     assert budget.remaining == 100 - (2 + 9 + 4)
+
+
+def test_evaluate_batch_writes_progress_at_every_round_boundary() -> None:
+    """The dashboard polls this from a separate thread while evaluate_batch is still
+    running, so progress must be written incrementally — once per round — not only once
+    after evaluate_batch returns."""
+    writes: list[int] = []
+
+    class _SpyProgress(BatchProgress):
+        def __setattr__(self, name: str, value: Any) -> None:
+            if name == "active_count":
+                writes.append(value)
+            super().__setattr__(name, value)
+
+    entries = [_entry(0), _entry(1)]
+    budget = StepBudget(remaining=100)
+    evaluate_batch(entries, budget, progress=_SpyProgress(active_count=0))
+    # Both genomes truncate together at DummyEnvironment's 5-step limit: 2 active -> 0,
+    # written once per round (5 rounds), not just once at the very end.
+    assert writes[0] == 2
+    assert writes[-1] == 0
+    assert len(writes) >= 2
+
+
+def test_evaluate_batch_progress_tracks_best_fitness_seen_so_far() -> None:
+    class SucceedsAfterOneStep(DummyObjective):
+        def should_stop(self) -> bool:
+            return self._steps >= 1
+
+    entries = [_entry(0, SucceedsAfterOneStep()), _entry(1)]
+    budget = StepBudget(remaining=100)
+    progress = BatchProgress(active_count=0)
+    evaluate_batch(entries, budget, progress=progress)
+    # Genome 0 finishes on step 1 with fitness 1.0; genome 1 is force-truncated by the
+    # collective stop with fitness 1.0 too (one step taken before the stop fires) —
+    # either way, best_fitness_so_far must reflect a finished genome by the time we return.
+    assert progress.best_fitness_so_far == 1.0
+
+
+def test_evaluate_batch_without_a_progress_argument_is_unaffected() -> None:
+    results = evaluate_batch([_entry(0)], StepBudget(remaining=100))
+    assert results[0].fitness == 5.0

@@ -21,6 +21,23 @@ class StepBudget:
     remaining: int
 
 
+@dataclass(init=False)
+class BatchProgress:
+    """Mutable, written by `evaluate_batch` at each round boundary — not just once at the
+    end — so a caller on a different thread (Phase 7's dashboard poller, via
+    `NeatTrainer.progress_snapshot`) can read live in-progress state while a generation's
+    batch is still running. Plain attribute writes/reads are safe here under CPython's GIL:
+    each field is a single atomic assignment, and brief cross-field inconsistency is fine
+    for a display value polled independently on its own timer."""
+
+    active_count: int
+    best_fitness_so_far: float | None = None
+
+    def __init__(self, active_count: int, best_fitness_so_far: float | None = None) -> None:
+        object.__setattr__(self, "active_count", active_count)
+        object.__setattr__(self, "best_fitness_so_far", best_fitness_so_far)
+
+
 @dataclass(frozen=True)
 class EvaluationResult:
     fitness: float
@@ -51,7 +68,7 @@ class _ActiveEpisode:
 
 
 def evaluate_batch(
-    entries: list[BatchEntry], step_budget: StepBudget
+    entries: list[BatchEntry], step_budget: StepBudget, *, progress: BatchProgress | None = None
 ) -> dict[int, EvaluationResult]:
     """Steps every entry's episode in round-robin lockstep. Each genome resets first (per
     Phase 0's per-episode `Objective.reset()`/`Model.reset()` hooks), then the batch advances
@@ -68,7 +85,9 @@ def evaluate_batch(
     `terminated`/`truncated` on the same tick its `Objective.should_stop()` would also have
     fired, the episode-end takes priority: it is scored as a normal ending and does NOT
     trigger the collective stop for the rest of the batch. This ordering is inherited
-    unchanged from the sequential evaluation this function replaced."""
+    unchanged from the sequential evaluation this function replaced. If `progress` is given,
+    it is updated at each round boundary and reflects the current active count / best finished
+    fitness so far."""
     active: list[_ActiveEpisode] = []
     for entry in entries:
         observation = entry.env.reset(seed=entry.seed)
@@ -79,6 +98,8 @@ def evaluate_batch(
                 entry.genome_id, entry.model, entry.env, entry.objective, observation, {}
             )
         )
+    if progress is not None:
+        progress.active_count = len(active)
 
     results: dict[int, EvaluationResult] = {}
     while active and step_budget.remaining > 0:
@@ -104,10 +125,24 @@ def evaluate_batch(
                 break
             still_active.append(genome)
         active = still_active
+        if progress is not None:
+            progress.active_count = len(active)
+            _update_best_fitness(progress, results)
         if stop_batch:
             break
 
     for genome in active:
         results[genome.genome_id] = EvaluationResult(genome.objective.fitness(), genome.last_info)
+    if progress is not None:
+        progress.active_count = 0
+        _update_best_fitness(progress, results)
 
     return results
+
+
+def _update_best_fitness(progress: BatchProgress, results: dict[int, EvaluationResult]) -> None:
+    if not results:
+        return
+    best = max(r.fitness for r in results.values())
+    if progress.best_fitness_so_far is None or best > progress.best_fitness_so_far:
+        progress.best_fitness_so_far = best
