@@ -9,19 +9,13 @@ the equivalent gap for track generation (Phase 2). Resolves `track_id` into a `T
 from __future__ import annotations
 
 import argparse
-import dataclasses
 from pathlib import Path
-from typing import Any
 
-from neuroarena.backends.neat.trainer import NeatTrainer
-from neuroarena.config import RunConfig
-from neuroarena.persistence import checkpoints_repo, models_repo, recorder, settings_history_repo
+from neuroarena.persistence import models_repo, recorder
 from neuroarena.persistence.db import connect
+from neuroarena.persistence.launch import prepare_run
 from neuroarena.persistence.runs_repo import RunRecord
-from neuroarena.sim.car_env import CarEnvironment, CarEnvironmentConfig
-from neuroarena.sim.objectives import ProgressObjective
 from neuroarena.tracks.store import UnknownTrackError
-from neuroarena.tracks.store import load as load_track
 
 DEFAULT_DATA_DIR = Path("data")
 
@@ -40,91 +34,33 @@ def run(
     """`None` means "the caller did not specify this", never "no value": an unspecified knob
     falls back to `RunConfig`'s own default on a fresh run, and to the model's most recent
     recorded settings on a resume (the spec's "opening a model loads its most recent settings
-    by default"). Passing a value explicitly overrides that fallback."""
+    by default"). Passing a value explicitly overrides that fallback. Setup (config
+    resolution, trainer construction) is `persistence.launch.prepare_run` — shared with
+    Phase 7's dashboard, which needs the same setup without this function's blocking
+    `run_and_record` call below."""
     conn = connect(data_dir / "neuroarena.db")
-    track_record = load_track(track_id, tracks_dir=data_dir / "tracks")
-    overrides: dict[str, Any] = {
-        key: value
-        for key, value in {
-            "population_size": population_size,
-            "max_generations": max_generations,
-            "target_fitness": target_fitness,
-            "checkpoint_every_n_generations": checkpoint_every_n_generations,
-            "champion_retention_cap": champion_retention_cap,
-        }.items()
-        if value is not None
-    }
-
-    # Resolve the effective config first — everything below (including `make_env`) reads it,
-    # and nothing here writes to the DB yet, so a rejected invocation leaves no rows behind.
-    resume_state: tuple[models_repo.ModelRecord, Path] | None = None
-    if resume_model_id is not None:
-        resume_model = models_repo.get_model(conn, resume_model_id)
-        latest = checkpoints_repo.latest_checkpoint(conn, resume_model_id, kind="resume")
-        if latest is None:
-            raise ValueError(f"model {resume_model_id!r} has no resume checkpoint to resume from")
-        previous_config = settings_history_repo.reconstruct_run_config(conn, resume_model_id)
-        if (
-            "population_size" in overrides
-            and overrides["population_size"] != previous_config.population_size
-        ):
-            raise ValueError(
-                "population_size cannot be changed on resume — NeatTrainer.load_checkpoint"
-                " always continues with the checkpoint's own population size"
-                f" ({previous_config.population_size})"
-            )
-        config = dataclasses.replace(previous_config, track_id=track_id, **overrides)
-        diff = settings_history_repo.compute_diff(previous_config, config)
-        # `NeatTrainer` pickles its generation counter *after* incrementing, so the restored
-        # segment's first `generation_stats` row is the checkpoint's generation + 1 — which is
-        # what `starting_generation` ("where this segment began") has to record.
-        starting_generation = latest.generation + 1
-        resume_state = (resume_model, Path(latest.file_path))
-    else:
-        config = dataclasses.replace(RunConfig(track_id=track_id), **overrides)
-        diff = settings_history_repo.compute_diff(None, config)
-        starting_generation = 0
-
-    if config.checkpoint_every_n_generations < 1:
-        raise ValueError(
-            "checkpoint_every_n_generations must be >= 1, got"
-            f" {config.checkpoint_every_n_generations}"
-        )
-
-    def make_env() -> CarEnvironment:
-        return CarEnvironment(
-            track_record.track, track_id, CarEnvironmentConfig.from_run_config(config)
-        )
-
-    objective = ProgressObjective()
-    checkpoint_root = data_dir / "checkpoints"
-
-    if resume_state is not None:
-        model, checkpoint_path = resume_state
-        trainer = NeatTrainer.load_checkpoint(checkpoint_path, make_env, objective, config)
-    else:
-        env = make_env()
-        model = models_repo.create_model(
-            conn,
-            backend="neat",
-            observation_space=env.observation_space,
-            action_space=env.action_space,
-        )
-        model_dir = checkpoint_root / model.model_id
-        trainer = NeatTrainer(make_env, objective, config, champion_dir=model_dir / "champion")
-
-    model_dir = checkpoint_root / model.model_id
+    prepared = prepare_run(
+        conn,
+        track_id=track_id,
+        population_size=population_size,
+        max_generations=max_generations,
+        target_fitness=target_fitness,
+        checkpoint_every_n_generations=checkpoint_every_n_generations,
+        champion_retention_cap=champion_retention_cap,
+        resume_model_id=resume_model_id,
+        data_dir=data_dir,
+    )
     return recorder.run_and_record(
         conn,
-        trainer,
-        model_id=model.model_id,
+        prepared.trainer,
+        model_id=prepared.model.model_id,
         track_id=track_id,
-        starting_generation=starting_generation,
-        resume_dir=model_dir / "resume",
-        champion_dir=model_dir / "champion",
-        checkpoint_every_n_generations=config.checkpoint_every_n_generations,
-        champion_retention_cap=config.champion_retention_cap,
-        initial_settings_diff=diff,
+        starting_generation=prepared.starting_generation,
+        resume_dir=prepared.model_dir / "resume",
+        champion_dir=prepared.model_dir / "champion",
+        checkpoint_every_n_generations=prepared.config.checkpoint_every_n_generations,
+        champion_retention_cap=prepared.config.champion_retention_cap,
+        initial_settings_diff=prepared.settings_diff,
     )
 
 
