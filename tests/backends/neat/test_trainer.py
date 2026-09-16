@@ -1,5 +1,6 @@
 import random
 import threading
+import time
 import typing
 import warnings
 from pathlib import Path
@@ -7,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from neuroarena.backends.neat.trainer import NeatTrainer
+from neuroarena.backends.neat.trainer import GenerationProgress, NeatTrainer
 from neuroarena.config import RunConfig
 from neuroarena.interfaces.compat import IncompatibleDescriptorsError
 from neuroarena.interfaces.protocols import Trainer, TrainingUpdate
@@ -506,3 +507,48 @@ def test_update_config_does_not_affect_a_generation_already_in_progress() -> Non
     gen1 = next(run)
     # The staged update only takes effect starting the next generation boundary.
     assert gen1.sim_time - gen0.sim_time == 7.0
+
+
+def test_progress_snapshot_is_none_before_run_starts() -> None:
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    assert trainer.progress_snapshot() is None
+
+
+def test_progress_snapshot_is_none_again_after_a_generation_completes() -> None:
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=5)
+    next(trainer.run())
+    assert trainer.progress_snapshot() is None
+
+
+def test_progress_snapshot_reflects_live_state_during_a_generation() -> None:
+    class SlowObjective(DummyObjective):
+        def update(
+            self,
+            observation: np.ndarray,
+            action: np.ndarray,
+            terminated: bool,
+            truncated: bool,
+            info: dict[str, typing.Any],
+        ) -> None:
+            super().update(observation, action, terminated, truncated, info)
+            time.sleep(0.02)
+
+    trainer = NeatTrainer(DummyEnvironment, SlowObjective(), RunConfig(), population_size=3)
+    snapshots: list[GenerationProgress | None] = []
+
+    def _poll() -> None:
+        for _ in range(100):
+            snapshots.append(trainer.progress_snapshot())
+            time.sleep(0.005)
+
+    poller = threading.Thread(target=_poll)
+    poller.start()
+    next(trainer.run())
+    poller.join()
+
+    live = [s for s in snapshots if s is not None]
+    assert live, "expected at least one snapshot while the generation was running"
+    assert all(s.population_size == 3 for s in live)
+    assert all(0 <= s.active_genomes_remaining <= 3 for s in live)
+    assert all(0 <= s.elapsed_steps <= s.step_ceiling for s in live)
+    assert all(s.generation == 0 for s in live)

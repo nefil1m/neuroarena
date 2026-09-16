@@ -27,6 +27,7 @@ import neat
 from neuroarena.backends.neat.config import build_neat_config
 from neuroarena.backends.neat.evaluation import (
     BatchEntry,
+    BatchProgress,
     EvaluationResult,
     StepBudget,
     evaluate_batch,
@@ -48,6 +49,19 @@ _CHECKPOINT_SCHEMA_VERSION = 2
 # trainer actually re-reads per generation; only these three are wired to `update_config`
 # today — see `update_config`'s own docstring for why the rest are excluded.
 _LIVE_CHANGEABLE_FIELDS = frozenset({"max_generation_steps", "max_generations", "target_fitness"})
+
+
+@dataclasses.dataclass(frozen=True)
+class GenerationProgress:
+    """A snapshot of an in-progress generation's batch state, for Phase 7's dashboard
+    polling loop. See `NeatTrainer.progress_snapshot`."""
+
+    generation: int
+    population_size: int
+    active_genomes_remaining: int
+    elapsed_steps: int
+    step_ceiling: int
+    best_fitness_so_far: float | None
 
 
 class NeatTrainer:
@@ -103,6 +117,8 @@ class NeatTrainer:
         self._generation = 0
         self._total_sim_steps = 0.0
         self._wall_start = time.perf_counter()
+        self._current_batch_progress: BatchProgress | None = None
+        self._current_step_budget: StepBudget | None = None
 
     def update_config(self, partial: Mapping[str, Any]) -> None:
         """Satisfies `Trainer.update_config` (Phase 0). Thread-safe: safe to call from a
@@ -171,6 +187,25 @@ class NeatTrainer:
                 **dict(partial),
             }
 
+    def progress_snapshot(self) -> GenerationProgress | None:
+        """Thread-safe (plain attribute reads under CPython's GIL — see `BatchProgress`'s
+        own docstring for why no lock is needed), read-only snapshot of the currently
+        in-progress generation's batch state, for Phase 7's dashboard polling loop. `None`
+        when no generation is currently running (between generations, or before `run()`
+        has been advanced at all)."""
+        progress = self._current_batch_progress
+        step_budget = self._current_step_budget
+        if progress is None or step_budget is None:
+            return None
+        return GenerationProgress(
+            generation=self._generation,
+            population_size=self._neat_config.pop_size,
+            active_genomes_remaining=progress.active_count,
+            elapsed_steps=self._config.max_generation_steps - step_budget.remaining,
+            step_ceiling=self._config.max_generation_steps,
+            best_fitness_so_far=progress.best_fitness_so_far,
+        )
+
     def run(self) -> Iterator[TrainingUpdate]:
         while True:
             update = self._run_one_generation()
@@ -205,6 +240,8 @@ class NeatTrainer:
                 self._pending_config_update = None
         self._env = self._make_env()
         step_budget = StepBudget(remaining=self._config.max_generation_steps)
+        self._current_step_budget = step_budget
+        self._current_batch_progress = BatchProgress(active_count=self._neat_config.pop_size)
         champion = _ChampionTracker()
         results: dict[int, EvaluationResult] = {}
 
@@ -224,7 +261,9 @@ class NeatTrainer:
                 )
                 for genome_id, genome in genomes
             ]
-            batch_results = evaluate_batch(entries, step_budget)
+            batch_results = evaluate_batch(
+                entries, step_budget, progress=self._current_batch_progress
+            )
             results.update(batch_results)
             genome_by_id = dict(genomes)
             for genome_id, result in batch_results.items():
@@ -233,6 +272,8 @@ class NeatTrainer:
                 champion.consider(genome, result)
 
         self._population.run(fitness_function, 1)
+        self._current_batch_progress = None
+        self._current_step_budget = None
 
         steps_used = self._config.max_generation_steps - step_budget.remaining
         self._total_sim_steps += steps_used
