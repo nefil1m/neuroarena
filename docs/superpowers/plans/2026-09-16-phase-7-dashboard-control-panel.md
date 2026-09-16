@@ -622,7 +622,13 @@ def test_prepare_run_resumes_from_an_existing_model(tmp_path: Path) -> None:
 
     track_id = _save_test_track(tmp_path)
     conn = connect(tmp_path / "neuroarena.db")
-    first = prepare_run(conn, track_id=track_id, population_size=6, data_dir=tmp_path)
+    # max_generations is required here: without it (or a should_stop callback below),
+    # NeatTrainer.run() has no exit condition and run_and_record loops forever — this bit a
+    # real SDD execution of this plan (see the plan file's own commit history / SDD ledger
+    # for 2026-09-16).
+    first = prepare_run(
+        conn, track_id=track_id, population_size=6, max_generations=2, data_dir=tmp_path
+    )
     run_and_record(
         conn,
         first.trainer,
