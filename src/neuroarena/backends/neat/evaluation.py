@@ -34,6 +34,10 @@ class BatchProgress:
     best_fitness_so_far: float | None = None
 
     def __init__(self, active_count: int, best_fitness_so_far: float | None = None) -> None:
+        # Use object.__setattr__ to bypass polymorphic dispatch: construction is not an
+        # observable write (the object doesn't exist for pollers yet). This prevents test spies
+        # from capturing spurious initialization writes, allowing them to intercept only actual
+        # progress updates in evaluate_batch.
         object.__setattr__(self, "active_count", active_count)
         object.__setattr__(self, "best_fitness_so_far", best_fitness_so_far)
 
