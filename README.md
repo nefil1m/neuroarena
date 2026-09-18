@@ -139,12 +139,18 @@ Open <http://localhost:5173>. From the panel you can:
 - open a game window — a separate `arcade` viewer, on the machine running the backend — that
   shows every car of the current generation live on the real track art (the best car
   highlighted), with three camera modes (whole track, follow the best car, follow a chosen
-  rank), zoom, and a small overlay (generation, cars alive, speed, camera);
+  rank), zoom, and a small overlay (generation, cars alive, speed, camera). In
+  follow-a-chosen-car mode the camera follows that car until it drops out, then the best
+  remaining car, and at a new generation it follows the best car;
 - set the simulation speed: `0.25x`, `0.5x`, `1x` (real time), `2x`, `4x`, `8x`, or `Max`.
   Slower speeds pace training so the game window is watchable, and make training take longer;
   `Max` (the default every time the backend starts) runs as fast as the CPU allows.
+  Speeds above real time only help if the CPU can keep up: a large population may already
+  be slower than real time at `Max`, in which case `2x`/`4x`/`8x` behave like `Max`.
+  Stop and Ctrl-C end a run at its next generation boundary, and a paced run speeds up to
+  reach it.
 
-The game window needs a display on the same machine as the backend; the panel itself can be used remotely. To run the viewer by hand: `uv run python -m neuroarena.render.viewer --url ws://127.0.0.1:8000/ws/viewer`.
+The game window needs a display on the same machine as the backend; the panel itself can be used remotely. If the window fails to open (no display), the error appears in the terminal running the backend, and the panel shows the window as closed. To run the viewer by hand: `uv run python -m neuroarena.render.viewer --url ws://127.0.0.1:8000/ws/viewer`.
 
 The backend allows one run at a time. The dashboard and the CLI share the same
 `data/` directory, so models trained from either show up in both.
