@@ -5,11 +5,15 @@ export function ConfigPanel() {
   const [maxGenerationSteps, setMaxGenerationSteps] = useState('')
   const [maxGenerations, setMaxGenerations] = useState('')
   const [targetFitness, setTargetFitness] = useState('')
-  const [pollIntervalMs, setPollIntervalMsState] = useState(200)
+  const [pollDraft, setPollDraft] = useState('200')
+  const [acceptedPollMs, setAcceptedPollMs] = useState(200)
   const [message, setMessage] = useState<string | null>(null)
 
   useEffect(() => {
-    getPollInterval().then((r) => setPollIntervalMsState(r.interval_ms))
+    getPollInterval().then((r) => {
+      setPollDraft(String(r.interval_ms))
+      setAcceptedPollMs(r.interval_ms)
+    })
   }, [])
 
   async function applyConfig(e: React.FormEvent) {
@@ -27,9 +31,17 @@ export function ConfigPanel() {
     }
   }
 
-  async function applyPollInterval(value: number) {
-    setPollIntervalMsState(value)
-    await setPollInterval(value).catch((err) => setMessage(String(err)))
+  async function applyPollInterval(draft: string) {
+    setPollDraft(draft)
+    const value = Number(draft)
+    if (draft === '' || !Number.isInteger(value) || value < 1) return
+    try {
+      await setPollInterval(value)
+      setAcceptedPollMs(value)
+    } catch (err) {
+      setPollDraft(String(acceptedPollMs))
+      setMessage(String(err))
+    }
   }
 
   async function handleStop() {
@@ -79,8 +91,8 @@ export function ConfigPanel() {
         <input
           type="number"
           min={1}
-          value={pollIntervalMs}
-          onChange={(e) => applyPollInterval(Number(e.target.value))}
+          value={pollDraft}
+          onChange={(e) => applyPollInterval(e.target.value)}
         />
       </label>
       <button onClick={handleStop}>Stop run</button>
