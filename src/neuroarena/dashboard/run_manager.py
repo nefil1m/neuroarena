@@ -168,7 +168,12 @@ class RunManager:
             if self._status == "running":
                 raise RunAlreadyActiveError("a run is already active in this backend process")
             previous_status = self._status
+            previous_trainer = self._trainer
+            previous_track_id = self._track_id
             self._status = "running"  # reserve the slot before the slow setup below
+            # ...and drop the previous run's identity so the viewer never sees it as current
+            self._track_id = track_id
+            self._trainer = None
         try:
             conn = connect(self._data_dir / "neuroarena.db")
             try:
@@ -196,6 +201,8 @@ class RunManager:
         except BaseException:
             with self._start_lock:
                 self._status = previous_status
+                self._trainer = previous_trainer
+                self._track_id = previous_track_id
             raise
         return prepared.model.model_id
 

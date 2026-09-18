@@ -343,3 +343,54 @@ def test_a_stop_request_unpaces_the_run_but_not_the_reported_preset(tmp_path: Pa
     manager.request_stop()
     assert manager.speed_multiplier() is None
     assert manager.speed_preset() == "2x"
+
+
+def _blocking_prepare(
+    monkeypatch: pytest.MonkeyPatch, *, fail: bool
+) -> tuple[threading.Event, threading.Event]:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def blocked(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        release.wait(timeout=10.0)
+        if fail:
+            raise ValueError("bad track")
+        raise AssertionError("unreachable in these tests")
+
+    monkeypatch.setattr("neuroarena.dashboard.run_manager.prepare_run", blocked)
+    return entered, release
+
+
+def test_the_reservation_window_shows_the_new_track_and_no_stale_cars(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = RunManager(data_dir=tmp_path)
+    previous_trainer = object()
+    manager._trainer = previous_trainer  # type: ignore[assignment]
+    manager._track_id = "old-track"
+    manager._status = "crashed"
+    entered, release = _blocking_prepare(monkeypatch, fail=True)
+    errors: list[BaseException] = []
+
+    def starter() -> None:
+        try:
+            manager.start(track_id="new-track")
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=starter, daemon=True)
+    thread.start()
+    try:
+        assert entered.wait(timeout=10.0)
+        assert manager.status().status == "running"
+        assert manager.current_track_id() == "new-track"
+        assert manager.visual_snapshot() is None
+    finally:
+        release.set()
+        thread.join(timeout=10.0)
+    assert not thread.is_alive()
+    assert len(errors) == 1 and isinstance(errors[0], ValueError)
+    assert manager.status().status == "crashed"
+    assert manager._trainer is previous_trainer
+    assert manager.current_track_id() == "old-track"
