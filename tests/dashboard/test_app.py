@@ -360,25 +360,47 @@ def test_ws_viewer_closes_the_socket_when_the_loop_body_fails(
 
 def test_ws_viewer_streams_frames_with_car_poses_for_a_running_run(tmp_path: Path) -> None:
     track_id = _save_test_track(tmp_path)
-    client = _viewer_client(tmp_path, FakeSpawner())
-    client.post(
-        "/api/runs", json={"track_id": track_id, "population_size": 6, "max_generations": 1000}
+    manager = RunManager(data_dir=tmp_path)
+    viewer = ViewerManager(
+        url="ws://127.0.0.1:8000/ws/viewer",
+        data_dir=tmp_path,
+        spawn=FakeSpawner(),
+        terminate_timeout_s=0.1,
     )
+    app = create_app(run_manager=manager, data_dir=tmp_path, viewer_manager=viewer)
     run_messages: list[dict[str, object]] = []
-    frame: dict[str, object] | None = None
-    try:
-        with client.websocket_connect("/ws/viewer") as ws:
-            deadline = time.monotonic() + 30.0
-            while time.monotonic() < deadline and frame is None:
-                message = ws.receive_json()
-                if message["type"] == "run":
-                    run_messages.append(message["data"])
-                elif message["type"] == "frame" and message["data"]["cars"]:
-                    frame = message["data"]
-    finally:
+    frames: list[dict[str, object]] = []
+
+    with TestClient(app) as client:
+        client.post(
+            "/api/runs", json={"track_id": track_id, "population_size": 6, "max_generations": 1000}
+        )
+
+        def read_until_a_frame() -> None:
+            with client.websocket_connect("/ws/viewer") as ws:
+                deadline = time.monotonic() + 30.0
+                while time.monotonic() < deadline and not frames:
+                    message = ws.receive_json()
+                    if message["type"] == "run":
+                        run_messages.append(message["data"])
+                    elif message["type"] == "frame" and message["data"]["cars"]:
+                        frames.append(message["data"])
+
+        reader = threading.Thread(target=read_until_a_frame, daemon=True)
+        reader.start()
+        reader.join(timeout=30.0)
+        timed_out = reader.is_alive()
         client.post("/api/runs/current/stop")
+        end = time.monotonic() + 60.0
+        while client.get("/api/runs/current").json()["status"] == "running":
+            assert time.monotonic() < end, "the run did not stop within 60 s"
+            time.sleep(0.05)
+        reader.join(timeout=10.0)
+        assert not timed_out, "no /ws/viewer frame with cars arrived within 30 s"
+
     assert run_messages and run_messages[-1]["track_id"] == track_id
-    assert frame is not None
+    assert frames
+    frame = frames[0]
     assert frame["population_size"] == 6
     assert frame["speed"] == "max"
     car = frame["cars"][0]  # type: ignore[index]
