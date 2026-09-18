@@ -1,90 +1,119 @@
 # neuroarena
 
-A 2D (later possibly 3D) simulation platform where games and learning models
-are decoupled: build a driving game, train models to play it, swap in
-different model types or games, and control everything — including
-headless/background training — from a web dashboard.
+A 2D simulation platform where games and learning models are decoupled: a
+driving game, a NEAT trainer that learns to play it, run persistence with
+resume, and a local web dashboard to control training. The pieces talk through
+small interfaces (`Environment`, `Model`, `Objective`, `Trainer`), so other
+model types or games can be swapped in.
 
-See `docs/OVERVIEW.md` for the full pitch and settled decisions, and
+See `docs/OVERVIEW.md` for the pitch and settled decisions, and
 `docs/PHASES.md` for the build plan.
 
-## Status
+## What it does
 
-**Phase 0 (Architecture Scaffolding) is complete.** This is a
-pure-declaration interface layer only: `typing.Protocol` definitions
-(`Environment`, `Model`, `Objective`, `Trainer`), space descriptors
-(`Box`/`Discrete`) whose field-wise equality is the model/environment
-compatibility rule, and a versioned JSON `RunConfig` envelope. There is
-**no game and no trainer yet** — those land in later phases (see
-`docs/phases/`). Nothing here renders or trains anything; what you can run
-today is the test suite and a small script proving the pieces compose (see
-Quickstart below).
+- **Playable driving game.** A kinematic-bicycle car on a tile-based track,
+  drawn with real sprite art by [`arcade`](https://api.arcade.academy/) (follow
+  camera, kerbs, start/finish decal). You drive with the keyboard; a human is
+  just another policy producing `(steering, throttle)`.
+- **Procedural tracks.** Closed-loop tracks generated from a size, a
+  complexity (turn frequency) and a seed, saved with a `track_id`.
+- **Sensors and a game-agnostic interface.** The car sees the world through
+  raycast sensors (a fixed-size observation vector) and acts with continuous
+  steering and throttle. The simulation is plain Python/NumPy and runs headless.
+- **NEAT training.** Each generation's whole population runs as a batch in
+  lockstep, every genome on its own isolated copy of the track. A generation
+  ends when every genome has finished or crashed, when the step ceiling is
+  reached, or as soon as one genome succeeds. Run-level stop conditions: a maximum number of generations and/or a target fitness.
+- **Persistence.** Every run, its settings history, per-generation stats,
+  resume checkpoints and champion checkpoints are stored in a local SQLite
+  database plus files under `data/`. Any model can be resumed later, inheriting
+  its most recent settings.
+- **Web dashboard.** A local control panel (FastAPI backend + React frontend):
+  start a new run or resume a saved model, watch live metrics over a WebSocket,
+  edit a few settings mid-run, stop a run, and set the dashboard's own update
+  rate.
+
+Not there yet: watching the cars train live (the dashboard shows numbers, not
+the game), and run-history charts or model inspection in the dashboard.
 
 ## Setup
 
-Requires Python 3.12+ and [`uv`](https://docs.astral.sh/uv/).
+Requires Python 3.12+ and [`uv`](https://docs.astral.sh/uv/). The dashboard
+frontend also needs Node.js and npm.
 
 ```bash
 uv sync
 ```
 
-## Running the tests
+## Quick tour
 
 ```bash
-uv run pytest -v
+# 1. Generate a track (saved under data/tracks/ and printed as a track_id)
+uv run neuroarena-track-gen --size 30 --seed 1
+
+# 2. Train on it — from the command line...
+uv run neuroarena-train --track-id <track_id> --population-size 150
+
+# ...or from the dashboard (see "Dashboard" below)
+uv run neuroarena-dashboard
+
+# 3. Drive a track yourself
+uv run neuroarena-play
 ```
 
-## Linting, formatting, and type checking
+## Commands
+
+### `neuroarena-play`
+
+Opens the game window on the bundled sample track. Drive with the arrow keys
+or `WASD`.
+
+### `neuroarena-track-gen`
+
+Generates a procedural closed-loop track.
 
 ```bash
-uv run ruff check .          # lint
-uv run ruff format .         # format (drop --check to write changes)
-uv run mypy src tests        # static type check (strict)
+uv run neuroarena-track-gen --size N --seed S [--complexity 0..1] [--tracks-dir DIR] [--preview]
 ```
 
-### Pre-commit hook
+| Option | Meaning |
+|---|---|
+| `--size` | target tile count (required) |
+| `--seed` | random seed (required) |
+| `--complexity` | turn-frequency bias, 0–1 |
+| `--tracks-dir` | where to save the track (default `data/tracks`) |
+| `--preview` | open the game window to drive the generated track |
 
-A local pre-commit hook runs all three (via `uv run`, so it always matches
-the versions pinned in `uv.lock`) before every commit. On a fresh clone:
+### `neuroarena-train`
+
+Launches a NEAT training run against a saved track and records it.
 
 ```bash
-uv run pre-commit install
+uv run neuroarena-train --track-id ID [--population-size N] [--max-generations N] \
+    [--target-fitness F] [--checkpoint-every-n-generations N] \
+    [--champion-retention-cap N] [--resume MODEL_ID] [--data-dir DIR]
 ```
 
-To run it manually against the whole repo without committing:
+| Option | Meaning |
+|---|---|
+| `--track-id` | a `track_id` from `neuroarena-track-gen` (required) |
+| `--population-size` | genomes per generation (default 150) |
+| `--max-generations` | stop after this many generations |
+| `--target-fitness` | stop once a genome reaches this fitness |
+| `--checkpoint-every-n-generations` | resume-checkpoint cadence (default 10) |
+| `--champion-retention-cap` | keep at most this many champion checkpoints |
+| `--resume` | resume a `model_id` (printed when a run starts), inheriting its latest settings |
+| `--data-dir` | database and checkpoint location (default `data`) |
 
-```bash
-uv run pre-commit run --all-files
-```
+Resuming starts from the model's last checkpoint, so generations after it are
+replayed. With the default cadence, a run stopped at generation 3 resumes from
+the generation-0 checkpoint.
 
-## Quickstart
+### `neuroarena-dashboard`
 
-Phase 0 has no game to launch, but `examples/quickstart.py` is a small,
-runnable script that exercises the actual interface layer: it defines a
-minimal Environment and Model, checks that both satisfy their Protocols,
-runs `check_compatibility` on a matching pair (passes) and a mismatched pair
-(raises with a descriptive error), and round-trips a `RunConfig` through the
-versioned JSON codec.
+The web control panel. It runs as two processes during development.
 
-```bash
-uv run python examples/quickstart.py
-```
-
-## Training
-
-`neuroarena-train` (Phase 6) launches a real NEAT training run against a saved track (generate one first with `neuroarena-track-gen`) and persists its progress — run history, checkpoints, and settings history — to a local SQLite database plus a `data/checkpoints/` directory:
-
-```bash
-uv run neuroarena-train --track-id <id-from-track-gen> --population-size 150
-```
-
-Resume a model's training later, inheriting its most recent settings, with `--resume <model_id>` (printed by the command above).
-
-## Dashboard
-
-`neuroarena-dashboard` (Phase 7) is the local web control panel: start or resume a training run, watch live metrics, and change a few settings mid-run. It has a FastAPI backend and a React frontend, run as two processes during development.
-
-Backend (binds `127.0.0.1:8000` by default, no auth):
+Backend (binds `127.0.0.1:8000`, no auth):
 
 ```bash
 uv run neuroarena-dashboard [--data-dir DIR] [--port N]
@@ -94,4 +123,66 @@ Frontend (Vite dev server on `:5173`, proxies `/api` and `/ws` to the backend):
 
 ```bash
 cd frontend && npm install && npm run dev
+```
+
+Open <http://localhost:5173>. From the panel you can:
+
+- pick a track and start a run (population size, maximum generations and target
+  fitness are optional), or resume a saved model with its last settings
+  pre-filled;
+- watch live status, the in-progress generation (active genomes, steps, best
+  fitness so far) and each completed generation's best/mean/worst fitness;
+- change maximum generation steps, maximum generations and target fitness while
+  a run is going (they apply at the next generation boundary);
+- stop the run (it ends after its current generation);
+- change how often the backend pushes updates (default 200 ms).
+
+The backend allows one run at a time. The dashboard and the CLI share the same
+`data/` directory, so models trained from either show up in both.
+
+## Project layout
+
+```
+src/neuroarena/
+  interfaces/   Environment / Model / Objective / Trainer protocols, spaces
+  config/       versioned RunConfig
+  sim/          physics, track, raycast sensors, observation, car environment
+  tracks/       track generation CLI and track store
+  render/       arcade game window, input, sprite assets
+  backends/neat NEAT trainer, batch evaluation, model
+  persistence/  SQLite repos, recorder, training CLI
+  dashboard/    FastAPI app, run manager, WebSocket protocol, CLI
+frontend/       React + TypeScript dashboard UI
+docs/           overview, build plan, requirements and implementation plans
+```
+
+## Development
+
+```bash
+uv run pytest -v             # tests
+uv run ruff check .          # lint
+uv run ruff format .         # format (add --check to only verify)
+uv run mypy src tests        # static type check (strict)
+```
+
+Frontend checks, from `frontend/`: `npx tsc -b`, `npm run build`, `npm run lint`.
+
+### Pre-commit hook
+
+A local pre-commit hook runs lint, format and type checks (via `uv run`, so it
+matches the versions pinned in `uv.lock`) before every commit. On a fresh clone:
+
+```bash
+uv run pre-commit install
+uv run pre-commit run --all-files    # run it manually
+```
+
+### Interface example
+
+`examples/quickstart.py` is a small runnable script that defines a minimal
+environment and model, checks they satisfy the protocols and are compatible,
+and round-trips a `RunConfig` through the versioned JSON codec:
+
+```bash
+uv run python examples/quickstart.py
 ```
