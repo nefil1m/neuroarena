@@ -81,6 +81,9 @@ def prepare_run(
             )
         config = dataclasses.replace(previous_config, track_id=track_id, **overrides)
         diff = settings_history_repo.compute_diff(previous_config, config)
+        # `NeatTrainer` pickles its generation counter *after* incrementing, so the restored
+        # segment's first `generation_stats` row is the checkpoint's generation + 1 — which is
+        # what `starting_generation` ("where this segment began") has to record.
         starting_generation = latest.generation + 1
         resume_state = (resume_model, Path(latest.file_path))
     else:
