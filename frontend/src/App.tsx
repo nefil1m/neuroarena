@@ -12,14 +12,19 @@ function App() {
     <div>
       <h1>neuroarena dashboard</h1>
       <NewRunForm
-        key={runKey}
+        key={`${runKey}-${resumeModelId ?? 'new'}`} // remount: fresh form when entering/leaving resume mode
         resumeModelId={resumeModelId}
         onStarted={() => setRunKey((k) => k + 1)}
       />
+      {resumeModelId !== null && (
+        <button type="button" onClick={() => setResumeModelId(null)}>
+          New run
+        </button>
+      )}
       <LiveMetrics />
       <ConfigPanel />
       <h2>Saved models</h2>
-      <ModelList onResume={setResumeModelId} />
+      <ModelList key={runKey} onResume={setResumeModelId} />
     </div>
   )
 }
