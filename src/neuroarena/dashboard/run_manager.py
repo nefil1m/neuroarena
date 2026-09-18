@@ -94,7 +94,12 @@ class RunManager:
         self._speed_preset = preset
 
     def speed_multiplier(self) -> float | None:
-        """The current preset as a multiplier of real time; `None` means unpaced ("max")."""
+        """The current preset as a multiplier of real time; `None` means unpaced ("max").
+        Always `None` while a stop is requested, so a paced run sprints to its generation
+        boundary (where `should_stop` is checked) instead of taking minutes to stop.
+        `speed_preset()` is unaffected."""
+        if self._stop_requested:
+            return None
         return SPEED_PRESETS[self._speed_preset]
 
     def current_track_id(self) -> str | None:

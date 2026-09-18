@@ -333,3 +333,13 @@ def test_a_running_run_exposes_track_id_pacer_and_car_poses(tmp_path: Path) -> N
     finally:
         manager.request_stop()
         _wait_until(lambda: manager.status().status != "running", timeout=60.0)
+
+
+def test_a_stop_request_unpaces_the_run_but_not_the_reported_preset(tmp_path: Path) -> None:
+    manager = RunManager(data_dir=tmp_path)
+    manager.set_speed_preset("2x")
+    manager._status = "running"  # pure state test: no real run needed
+    assert manager.speed_multiplier() == 2.0
+    manager.request_stop()
+    assert manager.speed_multiplier() is None
+    assert manager.speed_preset() == "2x"
