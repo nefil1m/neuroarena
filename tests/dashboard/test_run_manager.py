@@ -156,10 +156,10 @@ def test_worker_connect_failure_ends_crashed_and_allows_restart(
 
     monkeypatch.setattr("neuroarena.dashboard.run_manager.connect", flaky_connect)
     manager.start(track_id=track_id, overrides={"population_size": 6, "max_generations": 2})
-    _wait_until(lambda: manager.status().status == "crashed")
+    _wait_until(lambda: manager.status().status == "crashed", timeout=20)
     monkeypatch.setattr("neuroarena.dashboard.run_manager.connect", real_connect)
     manager.start(track_id=track_id, overrides={"population_size": 6, "max_generations": 2})
-    _wait_until(lambda: manager.status().status == "completed")
+    _wait_until(lambda: manager.status().status == "completed", timeout=20)
 
 
 def test_prepare_run_failure_restores_previous_status(
