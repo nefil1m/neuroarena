@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -40,7 +42,14 @@ class PollIntervalRequest:
 
 
 def create_app(run_manager: RunManager, data_dir: Path) -> FastAPI:
-    app = FastAPI(title="neuroarena dashboard")
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        yield
+        # Blocking (bounded) join — run off the event loop so it can't stall other handlers.
+        await asyncio.to_thread(run_manager.shutdown)
+
+    app = FastAPI(title="neuroarena dashboard", lifespan=lifespan)
 
     @app.get("/api/tracks")
     def get_tracks() -> list[dict[str, object]]:

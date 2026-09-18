@@ -102,15 +102,14 @@ def test_config_update_without_an_active_run_returns_409(tmp_path: Path) -> None
     assert response.status_code == 409
 
 
-def test_config_update_with_an_unsupported_field_returns_400(tmp_path: Path) -> None:
+def test_config_update_with_a_supported_field_returns_200(tmp_path: Path) -> None:
     track_id = _save_test_track(tmp_path)
     client = _client(tmp_path)
     client.post(
         "/api/runs", json={"track_id": track_id, "population_size": 6, "max_generations": 1000}
     )
-    # ConfigUpdateRequest only models the 3 wired fields, so an unsupported field can't even
-    # be expressed in the request body — this instead confirms a *supported* field is
-    # accepted and applied without error.
+    # ConfigUpdateRequest only models the 3 wired fields; this confirms a supported field is
+    # accepted while a run is active (no 400 path exists for unsupported fields here).
     response = client.patch("/api/runs/current/config", json={"max_generations": 3})
     assert response.status_code == 200
     client.post("/api/runs/current/stop")
@@ -184,3 +183,42 @@ def test_ws_pushes_status_then_progress_and_generation_messages(tmp_path: Path) 
                 break
         assert {"status", "progress", "generation"} <= seen_types
     client.post("/api/runs/current/stop")
+
+
+def test_config_update_after_the_run_has_ended_returns_409(tmp_path: Path) -> None:
+    track_id = _save_test_track(tmp_path)
+    client = _client(tmp_path)
+    client.post(
+        "/api/runs", json={"track_id": track_id, "population_size": 6, "max_generations": 2}
+    )
+    deadline = time.monotonic() + 20
+    while client.get("/api/runs/current").json()["status"] == "running":
+        assert time.monotonic() < deadline
+        time.sleep(0.02)
+    response = client.patch("/api/runs/current/config", json={"max_generations": 5})
+    assert response.status_code == 409
+
+
+def test_app_shutdown_stops_the_active_run_and_finalizes_its_row(tmp_path: Path) -> None:
+    from neuroarena.persistence import runs_repo
+    from neuroarena.persistence.db import connect
+
+    track_id = _save_test_track(tmp_path)
+    manager = RunManager(data_dir=tmp_path)
+    app = create_app(run_manager=manager, data_dir=tmp_path)
+    with TestClient(app) as client:
+        model_id = client.post(
+            "/api/runs",
+            json={"track_id": track_id, "population_size": 6, "max_generations": 1000},
+        ).json()["model_id"]
+        deadline = time.monotonic() + 20
+        while manager.latest_update() is None:
+            assert time.monotonic() < deadline
+            time.sleep(0.02)
+    conn = connect(tmp_path / "neuroarena.db")
+    try:
+        (run,) = runs_repo.list_runs_for_model(conn, model_id)
+    finally:
+        conn.close()
+    assert run.status == "stopped"
+    assert run.ended_at is not None

@@ -25,18 +25,20 @@ import sqlite3
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from neuroarena.backends.neat.trainer import GenerationProgress
 from neuroarena.interfaces.protocols import Trainer, TrainingUpdate
-from neuroarena.persistence import recorder
+from neuroarena.persistence import recorder, runs_repo
 from neuroarena.persistence.db import connect
 from neuroarena.persistence.launch import PreparedRun, prepare_run
 
 _log = logging.getLogger(__name__)
 
 DEFAULT_POLL_INTERVAL_MS = 200
+DEFAULT_SHUTDOWN_TIMEOUT_S = 10.0
 
 
 class RunAlreadyActiveError(RuntimeError):
@@ -64,6 +66,7 @@ class RunManager:
         self._stop_requested = False
         self._poll_interval_ms = DEFAULT_POLL_INTERVAL_MS
         self._start_lock = threading.Lock()
+        self._thread: threading.Thread | None = None
 
     def status(self) -> RunManagerStatus:
         generation = self._latest_update.progress_index if self._latest_update is not None else None
@@ -87,7 +90,7 @@ class RunManager:
         return self._latest_update
 
     def update_config(self, partial: Mapping[str, Any]) -> None:
-        if self._trainer is None:
+        if self._trainer is None or self._status != "running":
             raise NoActiveRunError("no run is currently active")
         self._trainer.update_config(partial)
 
@@ -95,6 +98,30 @@ class RunManager:
         if self._status != "running":
             raise NoActiveRunError("no run is currently active")
         self._stop_requested = True
+
+    def shutdown(self, timeout: float = DEFAULT_SHUTDOWN_TIMEOUT_S) -> None:
+        """Called on backend shutdown. The worker is a daemon thread, so interpreter
+        finalization would kill it mid-generation and leave its `runs` row at "running"
+        forever. Ask it to stop and wait (bounded) for it to finalize the row itself; if it
+        is still alive after `timeout`, mark the row "stopped" here. No-op when idle."""
+        thread = self._thread
+        if self._status != "running" or thread is None:
+            return
+        self._stop_requested = True
+        thread.join(timeout)
+        if not thread.is_alive() or self._model_id is None:
+            return
+        _log.warning("training worker did not stop within %.1fs; finalizing run row", timeout)
+        conn = connect(self._data_dir / "neuroarena.db")
+        try:
+            ended_at = datetime.now(UTC).isoformat()
+            for run in runs_repo.list_runs_for_model(conn, self._model_id):
+                if run.status == "running":
+                    runs_repo.update_run_status(
+                        conn, run.run_id, status="stopped", ended_at=ended_at
+                    )
+        finally:
+            conn.close()
 
     def start(
         self,
@@ -125,6 +152,7 @@ class RunManager:
             self._latest_update = None
             self._stop_requested = False
             thread = threading.Thread(target=self._run, args=(prepared,), daemon=True)
+            self._thread = thread
             thread.start()
         except BaseException:
             with self._start_lock:

@@ -215,3 +215,77 @@ def test_concurrent_starts_yield_exactly_one_success(
     finally:
         manager.request_stop()
         _wait_until(lambda: manager.status().status != "running")
+
+
+def _model_runs(data_dir: Path, model_id: str) -> list[Any]:
+    from neuroarena.persistence import runs_repo
+
+    conn = persistence_connect(data_dir / "neuroarena.db")
+    try:
+        return runs_repo.list_runs_for_model(conn, model_id)
+    finally:
+        conn.close()
+
+
+def test_update_config_after_the_run_has_ended_raises(tmp_path: Path) -> None:
+    track_id = _save_test_track(tmp_path)
+    manager = RunManager(data_dir=tmp_path)
+    manager.start(track_id=track_id, overrides={"population_size": 6, "max_generations": 2})
+    _wait_until(lambda: manager.status().status == "completed", timeout=20)
+    with pytest.raises(NoActiveRunError):
+        manager.update_config({"max_generations": 5})
+
+
+def test_shutdown_with_an_active_run_leaves_a_stopped_row(tmp_path: Path) -> None:
+    track_id = _save_test_track(tmp_path)
+    manager = RunManager(data_dir=tmp_path)
+    model_id = manager.start(
+        track_id=track_id, overrides={"population_size": 6, "max_generations": 1000}
+    )
+    _wait_until(lambda: manager.latest_update() is not None)
+    manager.shutdown(timeout=20)
+    (run,) = _model_runs(tmp_path, model_id)
+    assert run.status == "stopped"
+    assert run.ended_at is not None
+
+
+def test_shutdown_finalizes_the_row_itself_when_the_worker_outlives_the_timeout(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    track_id = _save_test_track(tmp_path)
+    manager = RunManager(data_dir=tmp_path)
+    release = threading.Event()
+    real_run = manager._run
+
+    def stuck_run(prepared: Any) -> None:
+        release.wait(timeout=20)
+        real_run(prepared)
+
+    monkeypatch.setattr(manager, "_run", stuck_run)
+    # Create the row the way the worker would, but keep the worker from ever starting it.
+    from neuroarena.persistence import runs_repo
+
+    model_id = manager.start(
+        track_id=track_id, overrides={"population_size": 6, "max_generations": 1000}
+    )
+    conn = persistence_connect(tmp_path / "neuroarena.db")
+    try:
+        runs_repo.create_run(conn, model_id=model_id, track_id=track_id, starting_generation=0)
+    finally:
+        conn.close()
+    try:
+        manager.shutdown(timeout=0.1)
+        (run,) = _model_runs(tmp_path, model_id)
+        assert run.status == "stopped"
+        assert run.ended_at is not None
+    finally:
+        release.set()
+        manager._stop_requested = True
+        if manager._thread is not None:
+            manager._thread.join(timeout=20)
+
+
+def test_shutdown_when_idle_is_a_noop(tmp_path: Path) -> None:
+    manager = RunManager(data_dir=tmp_path)
+    manager.shutdown(timeout=0.1)
+    assert manager.status().status == "idle"
