@@ -10,7 +10,8 @@ request-handling thread (reads status, requests config updates/stop) and the bac
 training thread this class spawns (writes status/latest_update as the run progresses).
 Every shared field is a single Python attribute (str, int, a frozen dataclass reference, or
 `None`) — plain reads/writes are safe under CPython's GIL, the same reasoning
-`NeatTrainer.progress_snapshot`/`BatchProgress` already document. The one compound
+`NeatTrainer.progress_snapshot`/`BatchProgress` already document. The speed preset is a
+single `str` attribute read by the `Pacer` on the training thread each round. The one compound
 operation, `start()`'s check-then-transition to "running" (called concurrently from
 FastAPI's threadpool), is guarded by `_start_lock` so at most one run is ever reserved; the
 slot is reserved under the lock *before* `prepare_run`'s slow DB/FS work and released back
@@ -29,7 +30,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from neuroarena.backends.neat.trainer import GenerationProgress
+from neuroarena.backends.neat.trainer import BatchVisuals, GenerationProgress
+from neuroarena.dashboard.pacing import DEFAULT_SPEED_PRESET, SPEED_PRESETS, Pacer
 from neuroarena.interfaces.protocols import Trainer, TrainingUpdate
 from neuroarena.persistence import recorder, runs_repo
 from neuroarena.persistence.db import connect
@@ -65,6 +67,9 @@ class RunManager:
         self._latest_update: TrainingUpdate | None = None
         self._stop_requested = False
         self._poll_interval_ms = DEFAULT_POLL_INTERVAL_MS
+        self._speed_preset = DEFAULT_SPEED_PRESET
+        self._pacer = Pacer(self.speed_multiplier)
+        self._track_id: str | None = None
         self._start_lock = threading.Lock()
         self._thread: threading.Thread | None = None
 
@@ -79,6 +84,30 @@ class RunManager:
         if value < 1:
             raise ValueError(f"poll interval must be >= 1ms, got {value}")
         self._poll_interval_ms = value
+
+    def speed_preset(self) -> str:
+        return self._speed_preset
+
+    def set_speed_preset(self, preset: str) -> None:
+        if preset not in SPEED_PRESETS:
+            raise ValueError(f"unknown speed preset {preset!r}; choose from {list(SPEED_PRESETS)}")
+        self._speed_preset = preset
+
+    def speed_multiplier(self) -> float | None:
+        """The current preset as a multiplier of real time; `None` means unpaced ("max")."""
+        return SPEED_PRESETS[self._speed_preset]
+
+    def current_track_id(self) -> str | None:
+        return self._track_id
+
+    def visual_snapshot(self) -> BatchVisuals | None:
+        """Every still-active car of the in-progress generation (see
+        `NeatTrainer.visual_snapshot`), or `None` unless a run is running — a finished run's
+        stale trainer must not keep producing frames."""
+        if self._trainer is None or self._status != "running":
+            return None
+        snapshot_fn = getattr(self._trainer, "visual_snapshot", None)
+        return None if snapshot_fn is None else snapshot_fn()
 
     def progress_snapshot(self) -> GenerationProgress | None:
         if self._trainer is None:
@@ -148,6 +177,11 @@ class RunManager:
             finally:
                 conn.close()
             self._trainer = prepared.trainer
+            self._pacer = Pacer(self.speed_multiplier)  # fresh deadline for each run
+            set_pace = getattr(prepared.trainer, "set_pace", None)
+            if set_pace is not None:
+                set_pace(self._pacer)
+            self._track_id = track_id
             self._model_id = prepared.model.model_id
             self._latest_update = None
             self._stop_requested = False

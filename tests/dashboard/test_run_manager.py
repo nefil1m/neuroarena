@@ -289,3 +289,47 @@ def test_shutdown_when_idle_is_a_noop(tmp_path: Path) -> None:
     manager = RunManager(data_dir=tmp_path)
     manager.shutdown(timeout=0.1)
     assert manager.status().status == "idle"
+
+
+def test_speed_preset_defaults_to_max_and_is_settable(tmp_path: Path) -> None:
+    manager = RunManager(data_dir=tmp_path)
+    assert manager.speed_preset() == "max"
+    assert manager.speed_multiplier() is None
+    manager.set_speed_preset("2x")
+    assert manager.speed_preset() == "2x"
+    assert manager.speed_multiplier() == 2.0
+
+
+def test_set_speed_preset_rejects_an_unknown_preset(tmp_path: Path) -> None:
+    manager = RunManager(data_dir=tmp_path)
+    with pytest.raises(ValueError):
+        manager.set_speed_preset("3x")
+    assert manager.speed_preset() == "max"
+
+
+def test_visual_snapshot_is_none_when_idle(tmp_path: Path) -> None:
+    assert RunManager(data_dir=tmp_path).visual_snapshot() is None
+    assert RunManager(data_dir=tmp_path).current_track_id() is None
+
+
+def test_a_running_run_exposes_track_id_pacer_and_car_poses(tmp_path: Path) -> None:
+    track_id = _save_test_track(tmp_path)
+    manager = RunManager(data_dir=tmp_path)
+    manager.start(track_id=track_id, overrides={"population_size": 6, "max_generations": 1000})
+    try:
+        assert manager.current_track_id() == track_id
+        # the trainer got this manager's pacer installed
+        assert getattr(manager._trainer, "_pace", None) is manager._pacer
+
+        def _has_cars() -> bool:
+            snapshot = manager.visual_snapshot()
+            return snapshot is not None and len(snapshot.genomes) > 0
+
+        _wait_until(_has_cars, timeout=30.0)
+        snapshot = manager.visual_snapshot()
+        assert snapshot is not None
+        assert snapshot.population_size == 6
+        assert set(snapshot.genomes[0].state) == {"x", "y", "heading"}
+    finally:
+        manager.request_stop()
+        _wait_until(lambda: manager.status().status != "running", timeout=60.0)

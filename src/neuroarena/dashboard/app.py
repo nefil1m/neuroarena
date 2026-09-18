@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
+from neuroarena.dashboard.pacing import SPEED_PRESETS
 from neuroarena.dashboard.run_manager import NoActiveRunError, RunAlreadyActiveError, RunManager
 from neuroarena.dashboard.ws_protocol import generation_message, progress_message, status_message
 from neuroarena.persistence import checkpoints_repo, models_repo, settings_history_repo
@@ -39,6 +40,11 @@ class ConfigUpdateRequest:
 @dataclasses.dataclass
 class PollIntervalRequest:
     interval_ms: int
+
+
+@dataclasses.dataclass
+class SpeedRequest:
+    preset: str
 
 
 def create_app(run_manager: RunManager, data_dir: Path) -> FastAPI:
@@ -148,6 +154,18 @@ def create_app(run_manager: RunManager, data_dir: Path) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"interval_ms": run_manager.poll_interval_ms()}
+
+    @app.get("/api/speed")
+    def get_speed() -> dict[str, Any]:
+        return {"preset": run_manager.speed_preset(), "presets": list(SPEED_PRESETS)}
+
+    @app.patch("/api/speed")
+    def set_speed(request: SpeedRequest) -> dict[str, str]:
+        try:
+            run_manager.set_speed_preset(request.preset)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"preset": run_manager.speed_preset()}
 
     @app.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket) -> None:

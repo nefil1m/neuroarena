@@ -222,3 +222,27 @@ def test_app_shutdown_stops_the_active_run_and_finalizes_its_row(tmp_path: Path)
         conn.close()
     assert run.status == "stopped"
     assert run.ended_at is not None
+
+
+def test_get_speed_defaults_to_max_and_lists_the_presets(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    response = client.get("/api/speed")
+    assert response.status_code == 200
+    assert response.json() == {
+        "preset": "max",
+        "presets": ["0.25x", "0.5x", "1x", "2x", "4x", "8x", "max"],
+    }
+
+
+def test_patch_speed_sets_the_preset(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    response = client.patch("/api/speed", json={"preset": "2x"})
+    assert response.status_code == 200
+    assert response.json() == {"preset": "2x"}
+    assert client.get("/api/speed").json()["preset"] == "2x"
+
+
+def test_patch_speed_rejects_an_unknown_preset_with_400(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    response = client.patch("/api/speed", json={"preset": "3x"})
+    assert response.status_code == 400
