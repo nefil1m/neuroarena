@@ -9,14 +9,19 @@ Threading model: every field below is touched from two threads — the FastAPI
 request-handling thread (reads status, requests config updates/stop) and the background
 training thread this class spawns (writes status/latest_update as the run progresses).
 Every shared field is a single Python attribute (str, int, a frozen dataclass reference, or
-`None`) — safe to read/write under CPython's GIL without an extra lock, the same reasoning
-`NeatTrainer.progress_snapshot`/`BatchProgress` already document. No field here is ever
-read-modify-written across the two threads (the only compound state mutation,
-`NeatTrainer.update_config`'s own pending-update merge, already has its own lock inside
-`NeatTrainer`)."""
+`None`) — plain reads/writes are safe under CPython's GIL, the same reasoning
+`NeatTrainer.progress_snapshot`/`BatchProgress` already document. The one compound
+operation, `start()`'s check-then-transition to "running" (called concurrently from
+FastAPI's threadpool), is guarded by `_start_lock` so at most one run is ever reserved; the
+slot is reserved under the lock *before* `prepare_run`'s slow DB/FS work and released back
+to the previous status if setup fails. The worker thread always ends in a terminal status
+(`record.status` or "crashed"). `NeatTrainer.update_config`'s own pending-update merge has
+its own lock inside `NeatTrainer`."""
 
 from __future__ import annotations
 
+import logging
+import sqlite3
 import threading
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -28,6 +33,8 @@ from neuroarena.interfaces.protocols import Trainer, TrainingUpdate
 from neuroarena.persistence import recorder
 from neuroarena.persistence.db import connect
 from neuroarena.persistence.launch import PreparedRun, prepare_run
+
+_log = logging.getLogger(__name__)
 
 DEFAULT_POLL_INTERVAL_MS = 200
 
@@ -56,6 +63,7 @@ class RunManager:
         self._latest_update: TrainingUpdate | None = None
         self._stop_requested = False
         self._poll_interval_ms = DEFAULT_POLL_INTERVAL_MS
+        self._start_lock = threading.Lock()
 
     def status(self) -> RunManagerStatus:
         generation = self._latest_update.progress_index if self._latest_update is not None else None
@@ -95,32 +103,40 @@ class RunManager:
         resume_model_id: str | None = None,
         overrides: dict[str, Any] | None = None,
     ) -> str:
-        if self._status == "running":
-            raise RunAlreadyActiveError("a run is already active in this backend process")
-        conn = connect(self._data_dir / "neuroarena.db")
+        with self._start_lock:
+            if self._status == "running":
+                raise RunAlreadyActiveError("a run is already active in this backend process")
+            previous_status = self._status
+            self._status = "running"  # reserve the slot before the slow setup below
         try:
-            prepared = prepare_run(
-                conn,
-                track_id=track_id,
-                resume_model_id=resume_model_id,
-                data_dir=self._data_dir,
-                **(overrides or {}),
-            )
-        finally:
-            conn.close()
-
-        self._trainer = prepared.trainer
-        self._model_id = prepared.model.model_id
-        self._status = "running"
-        self._latest_update = None
-        self._stop_requested = False
-        thread = threading.Thread(target=self._run, args=(prepared,), daemon=True)
-        thread.start()
+            conn = connect(self._data_dir / "neuroarena.db")
+            try:
+                prepared = prepare_run(
+                    conn,
+                    track_id=track_id,
+                    resume_model_id=resume_model_id,
+                    data_dir=self._data_dir,
+                    **(overrides or {}),
+                )
+            finally:
+                conn.close()
+            self._trainer = prepared.trainer
+            self._model_id = prepared.model.model_id
+            self._latest_update = None
+            self._stop_requested = False
+            thread = threading.Thread(target=self._run, args=(prepared,), daemon=True)
+            thread.start()
+        except BaseException:
+            with self._start_lock:
+                self._status = previous_status
+            raise
         return prepared.model.model_id
 
     def _run(self, prepared: PreparedRun) -> None:
-        thread_conn = connect(self._data_dir / "neuroarena.db")
+        thread_conn: sqlite3.Connection | None = None
+        final_status = "crashed"
         try:
+            thread_conn = connect(self._data_dir / "neuroarena.db")
             record = recorder.run_and_record(
                 thread_conn,
                 prepared.trainer,
@@ -135,11 +151,14 @@ class RunManager:
                 on_update=self._handle_update,
                 should_stop=lambda: self._stop_requested,
             )
-            self._status = record.status
+            final_status = record.status
         except Exception:
-            self._status = "crashed"
+            _log.exception("training run crashed")
         finally:
-            thread_conn.close()
+            # Any exit path (including BaseException) leaves a terminal status.
+            self._status = final_status
+            if thread_conn is not None:
+                thread_conn.close()
 
     def _handle_update(self, update: TrainingUpdate) -> None:
         self._latest_update = update
