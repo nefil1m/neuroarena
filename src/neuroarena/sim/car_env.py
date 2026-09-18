@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -91,6 +92,12 @@ class CarEnvironment:
         self._last_raw_position = self._project(self._game.car.x, self._game.car.y)
         self._step_count = 0
         return self._observation()
+
+    def visual_state(self) -> Mapping[str, float]:
+        """Satisfies `Visualizable`. One read of `self._game.car` (a frozen state replaced
+        atomically each tick), so a viewer thread never sees a torn pose."""
+        car = self._game.car
+        return {"x": car.x, "y": car.y, "heading": car.heading}
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, bool, bool, dict[str, Any]]:
         """Advance one tick. `info` carries `crashed` (bool, mirrors `terminated`),

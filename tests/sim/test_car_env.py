@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from neuroarena.config import RunConfig
-from neuroarena.interfaces.protocols import Environment
+from neuroarena.interfaces.protocols import Environment, Visualizable
 from neuroarena.interfaces.spaces import Box
 from neuroarena.sim.car_env import CarEnvironment, CarEnvironmentConfig
 from neuroarena.sim.observation import SensorConfig
@@ -136,3 +136,14 @@ def test_from_run_config_env_has_a_narrower_observation_space() -> None:
     car_config = CarEnvironmentConfig.from_run_config(RunConfig(sensor_config=sensor_config))
     env = CarEnvironment(_track(), track_id="abc123", config=car_config)
     assert env.observation_space == Box(-1.0, 1.0, (6,))  # 3 rays + speed + 2 last-action
+
+
+def test_car_environment_is_visualizable_and_reports_the_cars_pose() -> None:
+    env = CarEnvironment(_track(), track_id="abc123")
+    assert isinstance(env, Visualizable)
+    env.reset()
+    before = env.visual_state()
+    assert set(before) == {"x", "y", "heading"}
+    env.step(np.array([0.0, 1.0], dtype=np.float32))
+    after = env.visual_state()
+    assert (after["x"], after["y"]) != (before["x"], before["y"])

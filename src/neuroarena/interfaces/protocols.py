@@ -29,6 +29,17 @@ class Environment(Protocol):
 
 
 @runtime_checkable
+class Visualizable(Protocol):
+    """Optional capability, deliberately separate from `Environment` so no existing
+    implementer has to change: an environment that can describe its current state for a
+    viewer — a small mapping of named numbers (for the car game: `x`, `y`, `heading`).
+    A trainer may read it from another thread while stepping, so an implementation must
+    build the mapping from a single consistent read of its own state."""
+
+    def visual_state(self) -> Mapping[str, float]: ...
+
+
+@runtime_checkable
 class Model(Protocol):
     """A policy: observation -> action, plus a per-episode reset hook."""
 
