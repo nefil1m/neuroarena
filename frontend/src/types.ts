@@ -22,3 +22,22 @@ export interface StartRunRequest {
   max_generations?: number | null
   target_fitness?: number | null
 }
+
+export interface SpeedState {
+  preset: string
+  presets: string[]
+}
+
+export type CameraMode = 'fit' | 'follow_best' | 'follow_rank'
+
+export interface ViewSettings {
+  zoom: number
+  camera_mode: CameraMode
+  follow_rank: number
+  follow_seq: number
+}
+
+export interface ViewerState {
+  open: boolean
+  settings: ViewSettings
+}

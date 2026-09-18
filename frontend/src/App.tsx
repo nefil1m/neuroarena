@@ -3,6 +3,8 @@ import { ModelList } from './components/ModelList'
 import { LiveMetrics } from './components/LiveMetrics'
 import { NewRunForm } from './components/NewRunForm'
 import { ConfigPanel } from './components/ConfigPanel'
+import { SpeedControl } from './components/SpeedControl'
+import { ViewerPanel } from './components/ViewerPanel'
 
 function App() {
   const [resumeModelId, setResumeModelId] = useState<string | null>(null)
@@ -23,6 +25,8 @@ function App() {
       )}
       <LiveMetrics />
       <ConfigPanel />
+      <SpeedControl />
+      <ViewerPanel />
       <h2>Saved models</h2>
       <ModelList key={runKey} onResume={setResumeModelId} />
     </div>

@@ -1,4 +1,4 @@
-import type { Model, RunStatus, StartRunRequest, Track } from './types'
+import type { Model, RunStatus, SpeedState, StartRunRequest, Track, ViewSettings, ViewerState } from './types'
 
 async function json<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -56,4 +56,38 @@ export function setPollInterval(intervalMs: number): Promise<{ interval_ms: numb
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ interval_ms: intervalMs }),
   }).then((r) => json(r))
+}
+
+export function getSpeed(): Promise<SpeedState> {
+  return fetch('/api/speed').then((r) => json<SpeedState>(r))
+}
+
+export function setSpeed(preset: string): Promise<{ preset: string }> {
+  return fetch('/api/speed', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preset }),
+  }).then((r) => json<{ preset: string }>(r))
+}
+
+export function getViewer(): Promise<ViewerState> {
+  return fetch('/api/viewer').then((r) => json<ViewerState>(r))
+}
+
+export function openViewer(): Promise<ViewerState> {
+  return fetch('/api/viewer/open', { method: 'POST' }).then((r) => json<ViewerState>(r))
+}
+
+export function closeViewer(): Promise<ViewerState> {
+  return fetch('/api/viewer/close', { method: 'POST' }).then((r) => json<ViewerState>(r))
+}
+
+export function updateViewerSettings(
+  partial: Record<string, number | string>,
+): Promise<ViewSettings> {
+  return fetch('/api/viewer/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(partial),
+  }).then((r) => json<ViewSettings>(r))
 }
