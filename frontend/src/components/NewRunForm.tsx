@@ -26,13 +26,23 @@ export function NewRunForm({
       setCurrentGeneration(null)
       return
     }
-    getModelSettings(resumeModelId).then((settings) => {
-      if (typeof settings.population_size === 'number') setPopulationSize(settings.population_size)
-      if (typeof settings.max_generations === 'number') setMaxGenerations(settings.max_generations)
-      if (typeof settings.target_fitness === 'number') setTargetFitness(settings.target_fitness)
-      if (typeof settings.track_id === 'string') setTrackId(settings.track_id)
-      setCurrentGeneration(typeof settings.current_generation === 'number' ? settings.current_generation : null)
-    })
+    let cancelled = false
+    getModelSettings(resumeModelId)
+      .then((settings) => {
+        if (cancelled) return
+        if (typeof settings.population_size === 'number') setPopulationSize(settings.population_size)
+        if (typeof settings.max_generations === 'number') setMaxGenerations(settings.max_generations)
+        if (typeof settings.target_fitness === 'number') setTargetFitness(settings.target_fitness)
+        if (typeof settings.track_id === 'string') setTrackId(settings.track_id)
+        setCurrentGeneration(typeof settings.current_generation === 'number' ? settings.current_generation : null)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setError(`Could not load settings for ${resumeModelId}: ${err instanceof Error ? err.message : String(err)}`)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [resumeModelId])
 
   async function handleSubmit(e: React.FormEvent) {
@@ -83,6 +93,7 @@ export function NewRunForm({
         Population size
         <input
           type="number"
+          min={1}
           value={populationSize}
           onChange={(e) => setPopulationSize(e.target.value === '' ? '' : Number(e.target.value))}
         />
@@ -91,6 +102,7 @@ export function NewRunForm({
         Max generations
         <input
           type="number"
+          min={1}
           value={maxGenerations}
           onChange={(e) => setMaxGenerations(e.target.value === '' ? '' : Number(e.target.value))}
         />
@@ -99,6 +111,7 @@ export function NewRunForm({
         Target fitness
         <input
           type="number"
+          step="any"
           value={targetFitness}
           onChange={(e) => setTargetFitness(e.target.value === '' ? '' : Number(e.target.value))}
         />
