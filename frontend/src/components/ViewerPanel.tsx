@@ -10,6 +10,7 @@ function describe(err: unknown): string {
 
 export function ViewerPanel() {
   const [viewer, setViewer] = useState<ViewerState | null>(null)
+  const [zoomDraft, setZoomDraft] = useState<number | null>(null)
   const [rank, setRank] = useState('1')
   const [message, setMessage] = useState<string | null>(null)
 
@@ -53,6 +54,15 @@ export function ViewerPanel() {
     }
   }
 
+  // While a zoom change is pending, show the draft; otherwise the server-confirmed value.
+  const zoomShown = zoomDraft ?? viewer?.settings.zoom ?? 1
+
+  async function commitZoom(value: number) {
+    if (zoomDraft === null) return // nothing was changed since the last commit
+    await applySettings({ zoom: value })
+    setZoomDraft(null)
+  }
+
   const rankValue = Number(rank)
   const rankValid = Number.isInteger(rankValue) && rankValue >= 1
 
@@ -83,14 +93,16 @@ export function ViewerPanel() {
             </select>
           </label>
           <label>
-            Zoom ({viewer.settings.zoom}×)
+            Zoom ({zoomShown}×)
             <input
               type="range"
               min={0.25}
               max={4}
               step={0.25}
-              value={viewer.settings.zoom}
-              onChange={(e) => applySettings({ zoom: Number(e.target.value) })}
+              value={zoomShown}
+              onChange={(e) => setZoomDraft(Number(e.target.value))}
+              onPointerUp={(e) => commitZoom(Number(e.currentTarget.value))}
+              onKeyUp={(e) => commitZoom(Number(e.currentTarget.value))}
             />
           </label>
           <label>
