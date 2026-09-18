@@ -30,11 +30,11 @@ See `docs/OVERVIEW.md` for the pitch and settled decisions, and
   its most recent settings.
 - **Web dashboard.** A local control panel (FastAPI backend + React frontend):
   start a new run or resume a saved model, watch live metrics over a WebSocket,
-  edit a few settings mid-run, stop a run, and set the dashboard's own update
-  rate.
+  edit a few settings mid-run, stop a run, set the dashboard's own update
+  rate, open a game window that shows the whole generation live, and set the
+  training speed.
 
-Not there yet: watching the cars train live (the dashboard shows numbers, not
-the game), and run-history charts or model inspection in the dashboard.
+Not there yet: run-history charts and model inspection in the dashboard.
 
 ## Setup
 
@@ -135,7 +135,16 @@ Open <http://localhost:5173>. From the panel you can:
 - change maximum generation steps, maximum generations and target fitness while
   a run is going (they apply at the next generation boundary);
 - stop the run (it ends after its current generation);
-- change how often the backend pushes updates (default 200 ms).
+- change how often the backend pushes updates (default 200 ms);
+- open a game window — a separate `arcade` viewer, on the machine running the backend — that
+  shows every car of the current generation live on the real track art (the best car
+  highlighted), with three camera modes (whole track, follow the best car, follow a chosen
+  rank), zoom, and a small overlay (generation, cars alive, speed, camera);
+- set the simulation speed: `0.25x`, `0.5x`, `1x` (real time), `2x`, `4x`, `8x`, or `Max`.
+  Slower speeds pace training so the game window is watchable, and make training take longer;
+  `Max` (the default every time the backend starts) runs as fast as the CPU allows.
+
+The game window needs a display on the same machine as the backend; the panel itself can be used remotely. To run the viewer by hand: `uv run python -m neuroarena.render.viewer --url ws://127.0.0.1:8000/ws/viewer`.
 
 The backend allows one run at a time. The dashboard and the CLI share the same
 `data/` directory, so models trained from either show up in both.
@@ -148,7 +157,7 @@ src/neuroarena/
   config/       versioned RunConfig
   sim/          physics, track, raycast sensors, observation, car environment
   tracks/       track generation CLI and track store
-  render/       arcade game window, input, sprite assets
+  render/       arcade game window, viewer window, input, sprite assets
   backends/neat NEAT trainer, batch evaluation, model
   persistence/  SQLite repos, recorder, training CLI
   dashboard/    FastAPI app, run manager, WebSocket protocol, CLI

@@ -42,10 +42,27 @@ How the pieces fit (settled 2026-09-18):
 None remaining at the requirements level. Implementation-level details left to the Implementation plan: the exact fields and thread-safety shape of the trainer's additive car-pose snapshot (position, heading, live `Objective.fitness()`, alive flag — same read-only shape as Phase 7's progress snapshot), the pacing hook's exact signature in `evaluate_batch`, and how `arcade`'s main-thread event loop, the viewer's connection thread and the spawn/terminate channel fit together (the reason the viewer is its own process).
 
 ## Implementation plan
-_Do not write this section until Requirements above is FINALIZED._
+Detailed, step-by-step plan: [`../superpowers/plans/2026-09-18-phase-8-game-viewer.md`](../superpowers/plans/2026-09-18-phase-8-game-viewer.md).
+
+Thirteen tasks, each ending in an independently testable, committed deliverable:
+
+1. `Visualizable` protocol + `CarEnvironment.visual_state()`.
+2. `evaluate_batch`: live-genome publication and the per-round `pace` hook.
+3. `NeatTrainer.visual_snapshot()` and `set_pace()`.
+4. `dashboard/pacing.py`: speed presets and `Pacer`.
+5. `RunManager` speed state, pacer wiring, visual snapshot; `/api/speed`.
+6. `render/view_settings.py` (pure `ViewSettings`).
+7. `render/view_model.py` (ranking, follow logic, camera, overlay — pure).
+8. Viewer protocol messages and `ViewerManager`.
+9. Viewer REST routes, `/ws/viewer`, shutdown and CLI wiring.
+10. `render/viewer_client.py` (the viewer's backend connection).
+11. `TrackScene` extraction and the viewer window.
+12. Frontend: speed selector and game-window panel.
+13. Docs, `sim_speed` note and end-to-end verification.
 
 ## Revision history
 - 2026-09-09 — Created by splitting the original Phase 7 (Web Dashboard) into three phases; seeded requirements from the platform decisions pass.
 - 2026-09-10 — Reframed for the platform scope cut (see `../OVERVIEW.md`): with genomes evaluated in isolation rather than in a shared simulation space, the live view is no longer "a running population" / swarm on one track. It now shows the currently-evaluating genome(s), optionally with this generation's completed trajectories overlaid. Added an open question on how to make that read as "watch the generation learn".
 - 2026-09-18 — **Deliberate revision: from an in-browser live canvas to a native game-viewer window controlled from the panel.** First decided that the view shows the whole concurrent batch live (ghost cars, best highlighted), which resolved the earlier single-genome vs. overlay vs. montage question — Phase 4's 2026-09-15 concurrent-batch revision made that the natural view. Then, weighing how to get the game into the browser, rejected both a second browser-side renderer (duplicates the drawing rules) and server-side frame streaming (offscreen-GL risk under WSL2, encoding cost); chose instead to extend the `arcade` renderer with multi-car drawing and camera controls and open it as a separate viewer process from the panel, after confirming the `arcade` window works on the project's setup. Renamed from "Dashboard: Live Canvas" (file `phase-8-dashboard-live-canvas.md` → `phase-8-dashboard-game-viewer.md`); `../PHASES.md`, `../OVERVIEW.md` and `phase-7-dashboard-control-panel.md` updated to match. Camera modes settled the same day: fit-to-track, follow-best and follow-chosen-car, all three; the followed car is chosen from the panel by rank (no click-to-select), with fall-back to the best remaining car when it drops out. 
 - 2026-09-18 — Promoted from DRAFT to FINALIZED after the exploration pass resolved every requirements-level question (view content, camera modes, follow-by-rank, speed presets and pacing, speed as runtime state, 60 Hz frame stream, viewer lifecycle and overlay, ranking by `Objective.fitness()`) and the design above was approved. Also added a `/ws/viewer` endpoint decision so the panel's `/ws` message set stays as Phase 7 defined it. Phase 5's doc was annotated for the `sim_speed` reclassification.
+- 2026-09-18 — Implementation plan written and executed: [`../superpowers/plans/2026-09-18-phase-8-game-viewer.md`](../superpowers/plans/2026-09-18-phase-8-game-viewer.md). The phase is implemented (full Python suite, ruff, `mypy --strict`, and the frontend type-check/build/lint gates green; an end-to-end smoke run confirmed pacing slows training at `1x` and recovers at `Max`, and that the viewer window opens, connects and stays up). Plan-level deviations: (1) the panel's zoom slider commits once on release (a local draft while dragging, one PATCH on pointer/key release) instead of PATCHing on every step, because per-step PATCHes made the thumb snap back and could arrive out of order — so zoom applies when the slider is released, not continuously while dragging; (2) the viewer-client task's plan text said "12 tests" but its test file has 11, and two test lists needed `list[str | bytes]` annotations for mypy (annotation-only). Open items: the user's visual check of the viewer window is still owed (the automated smoke runs only prove it starts, connects and stays alive); a run configured with custom `physics_constants` draws default-size car sprites; Phase 7's in-browser walkthrough of the panel is still owed and now also covers the new speed and game-window panels; pacing can only slow a run (at `8x` a large population may already be CPU-bound).

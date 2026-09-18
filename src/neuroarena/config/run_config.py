@@ -28,7 +28,11 @@ class RunConfig:
     `checkpoint_every_n_generations` and `champion_retention_cap` are Phase 6 knobs
     consumed by `neuroarena.persistence.recorder` — the first sets resume-checkpoint
     cadence (every save kept, never overwritten), the second optionally bounds how many
-    champion checkpoints (Phase 4's per-generation capture) are retained."""
+    champion checkpoints (Phase 4's per-generation capture) are retained.
+
+    `sim_speed` stays an unused stub on purpose: simulation speed is dashboard-only runtime
+    state (`neuroarena.dashboard.pacing`), deliberately not a `RunConfig` field and never
+    persisted, so that a resumed run cannot inherit a real-time pacing speed."""
 
     master_seed: int = 0
     max_generation_steps: int = 300_000
