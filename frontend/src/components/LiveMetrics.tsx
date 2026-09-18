@@ -2,13 +2,14 @@ import { useDashboardSocket } from '../ws'
 
 export function LiveMetrics() {
   const { progress, generation, status } = useDashboardSocket()
-  const noRun = (!status || status.state === 'idle') && !progress && !generation
+  const showProgress = progress !== null && status?.state === 'running'
+  const noRun = (!status || status.state === 'idle') && !showProgress && !generation
 
   return (
     <div>
       <h2>Live metrics</h2>
       {status && !noRun && <p>Status: {status.state}</p>}
-      {progress && (
+      {showProgress && progress && (
         <div>
           <h3>Generation {progress.generation} (in progress)</h3>
           <p>
