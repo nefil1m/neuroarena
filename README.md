@@ -79,3 +79,19 @@ uv run neuroarena-train --track-id <id-from-track-gen> --population-size 150
 ```
 
 Resume a model's training later, inheriting its most recent settings, with `--resume <model_id>` (printed by the command above).
+
+## Dashboard
+
+`neuroarena-dashboard` (Phase 7) is the local web control panel: start or resume a training run, watch live metrics, and change a few settings mid-run. It has a FastAPI backend and a React frontend, run as two processes during development.
+
+Backend (binds `127.0.0.1:8000` by default, no auth):
+
+```bash
+uv run neuroarena-dashboard [--data-dir DIR] [--port N]
+```
+
+Frontend (Vite dev server on `:5173`, proxies `/api` and `/ws` to the backend):
+
+```bash
+cd frontend && npm install && npm run dev
+```

@@ -1,32 +1,19 @@
-# React + TypeScript + Vite
+# neuroarena dashboard frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript + Vite single-page UI for the neuroarena dashboard (Phase 7): model list with resume, new-run/resume form, live training metrics over WebSocket, live config editing, poll-interval knob and manual stop. It talks only to the backend started by `uv run neuroarena-dashboard` (default `127.0.0.1:8000`).
 
-Currently, two official plugins are available:
+## Commands
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Run from this directory.
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install        # install dependencies
+npm run dev        # dev server on http://localhost:5173
+npm run build      # type-check (tsc -b) and produce a production build in dist/
+npm run lint       # oxlint
+npx tsc -b         # type-check only
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Backend proxy
+
+The dev server proxies `/api` (REST) and `/ws` (WebSocket) to the backend, so start the backend first. See `vite.config.ts` for the target.
