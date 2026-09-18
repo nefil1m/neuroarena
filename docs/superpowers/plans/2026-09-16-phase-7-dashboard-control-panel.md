@@ -1753,7 +1753,8 @@ def test_ws_pushes_status_then_progress_and_generation_messages(tmp_path: Path) 
             json={"track_id": track_id, "population_size": 6, "max_generations": 1000},
         )
         seen_types: set[str] = set()
-        for _ in range(200):
+        deadline = time.monotonic() + 30  # wall-clock bound; progress msgs arrive every tick
+        while time.monotonic() < deadline:
             msg = ws.receive_json()
             seen_types.add(msg["type"])
             assert msg["schema_version"] == 1
@@ -1763,7 +1764,7 @@ def test_ws_pushes_status_then_progress_and_generation_messages(tmp_path: Path) 
     client.post("/api/runs/current/stop")
 ```
 
-Add the needed import at the top of `tests/dashboard/test_app.py`: `RunManager` is already imported; no new imports required beyond what's already there (`create_app`, `TestClient`).
+Add `import time` at the top of `tests/dashboard/test_app.py` (stdlib group, above `from pathlib import Path`); `RunManager`, `create_app`, `TestClient` are already imported.
 
 - [ ] **Step 2: Run to verify the new test fails**
 
