@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ModelList } from './components/ModelList'
 import { LiveMetrics } from './components/LiveMetrics'
 import { NewRunForm } from './components/NewRunForm'
+import { ConfigPanel } from './components/ConfigPanel'
 
 function App() {
   const [resumeModelId, setResumeModelId] = useState<string | null>(null)
@@ -16,6 +17,7 @@ function App() {
         onStarted={() => setRunKey((k) => k + 1)}
       />
       <LiveMetrics />
+      <ConfigPanel />
       <h2>Saved models</h2>
       <ModelList onResume={setResumeModelId} />
     </div>
