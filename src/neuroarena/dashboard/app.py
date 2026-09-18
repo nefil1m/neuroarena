@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -29,6 +30,8 @@ from neuroarena.persistence.db import connect
 from neuroarena.render.view_settings import ViewSettings
 from neuroarena.tracks import store as tracks_store
 from neuroarena.tracks.store import UnknownTrackError
+
+_log = logging.getLogger(__name__)
 
 DEFAULT_VIEWER_URL = "ws://127.0.0.1:8000/ws/viewer"
 VIEWER_FRAME_INTERVAL_S = 1 / 60
@@ -279,5 +282,11 @@ def create_app(
                 await asyncio.sleep(VIEWER_FRAME_INTERVAL_S)
         except WebSocketDisconnect:
             pass
+        except Exception:
+            _log.exception("/ws/viewer failed; closing the connection")
+            try:
+                await websocket.close()
+            except Exception:  # noqa: BLE001 - the socket may already be closed
+                pass
 
     return app

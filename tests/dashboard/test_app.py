@@ -1,7 +1,10 @@
+import threading
 import time
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from neuroarena.dashboard.app import create_app
 from neuroarena.dashboard.run_manager import RunManager
@@ -321,6 +324,38 @@ def test_ws_viewer_sends_run_and_view_messages_on_connect_when_idle(tmp_path: Pa
     assert {first["type"], second["type"]} == {"run", "view"}
     run = first if first["type"] == "run" else second
     assert run["data"] == {"state": "idle", "track_id": None, "model_id": None}
+
+
+def test_ws_viewer_closes_the_socket_when_the_loop_body_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manager = RunManager(data_dir=tmp_path)
+
+    def boom() -> None:
+        raise RuntimeError("snapshot failed")
+
+    monkeypatch.setattr(manager, "visual_snapshot", boom)
+    viewer = ViewerManager(
+        url="ws://x/ws/viewer", data_dir=tmp_path, spawn=FakeSpawner(), terminate_timeout_s=0.1
+    )
+    app = create_app(run_manager=manager, data_dir=tmp_path, viewer_manager=viewer)
+    outcome: list[str] = []
+
+    def drive() -> None:
+        with TestClient(app) as client, client.websocket_connect("/ws/viewer") as ws:
+            first = ws.receive_json()
+            second = ws.receive_json()
+            assert {first["type"], second["type"]} == {"run", "view"}
+            try:
+                ws.receive_json()
+            except WebSocketDisconnect:
+                outcome.append("closed")
+
+    thread = threading.Thread(target=drive, daemon=True)
+    thread.start()
+    thread.join(timeout=20.0)
+    assert not thread.is_alive(), "/ws/viewer did not end after the loop body failed"
+    assert outcome == ["closed"]
 
 
 def test_ws_viewer_streams_frames_with_car_poses_for_a_running_run(tmp_path: Path) -> None:
