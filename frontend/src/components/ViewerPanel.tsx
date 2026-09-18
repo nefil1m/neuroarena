@@ -13,11 +13,15 @@ export function ViewerPanel() {
   const [zoomDraft, setZoomDraft] = useState<number | null>(null)
   const [rank, setRank] = useState('1')
   const [message, setMessage] = useState<string | null>(null)
+  const [pollError, setPollError] = useState<string | null>(null)
 
   const refresh = useCallback(() => {
     getViewer()
-      .then(setViewer)
-      .catch((err) => setMessage(describe(err)))
+      .then((state) => {
+        setViewer(state)
+        setPollError(null)
+      })
+      .catch((err) => setPollError(describe(err)))
   }, [])
 
   useEffect(() => {
@@ -85,7 +89,14 @@ export function ViewerPanel() {
             Camera
             <select
               value={viewer.settings.camera_mode}
-              onChange={(e) => applySettings({ camera_mode: e.target.value as CameraMode })}
+              onChange={(e) => {
+                const mode = e.target.value as CameraMode
+                applySettings(
+                  mode === 'follow_rank' && rankValid
+                    ? { camera_mode: mode, follow_rank: rankValue }
+                    : { camera_mode: mode },
+                )
+              }}
             >
               <option value="fit">Whole track</option>
               <option value="follow_best">Follow the best car</option>
@@ -124,7 +135,7 @@ export function ViewerPanel() {
           </button>
         </div>
       )}
-      {message && <p role="alert">{message}</p>}
+      {(message ?? pollError) && <p role="alert">{message ?? pollError}</p>}
     </div>
   )
 }
