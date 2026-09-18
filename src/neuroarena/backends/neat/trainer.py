@@ -34,7 +34,7 @@ from neuroarena.backends.neat.evaluation import (
 )
 from neuroarena.backends.neat.model import GenomeModel
 from neuroarena.interfaces.compat import IncompatibleDescriptorsError
-from neuroarena.interfaces.protocols import TrainingUpdate
+from neuroarena.interfaces.protocols import TrainingUpdate, Visualizable
 from neuroarena.interfaces.spaces import Box
 
 if TYPE_CHECKING:
@@ -62,6 +62,26 @@ class GenerationProgress:
     elapsed_steps: int
     step_ceiling: int
     best_fitness_so_far: float | None
+
+
+@dataclasses.dataclass(frozen=True)
+class GenomeVisual:
+    """One still-active genome as a viewer sees it: the environment's own visual state
+    (see `Visualizable`) plus the genome's live `Objective.fitness()`."""
+
+    genome_id: int
+    state: Mapping[str, float]
+    fitness: float
+
+
+@dataclasses.dataclass(frozen=True)
+class BatchVisuals:
+    """A snapshot of every still-active genome of the in-progress generation, for Phase 8's
+    viewer. See `NeatTrainer.visual_snapshot`."""
+
+    generation: int
+    population_size: int
+    genomes: tuple[GenomeVisual, ...]
 
 
 class NeatTrainer:
@@ -119,6 +139,9 @@ class NeatTrainer:
         self._wall_start = time.perf_counter()
         self._current_batch_progress: BatchProgress | None = None
         self._current_step_budget: StepBudget | None = None
+        # Phase 8: optional per-round pacing callback (see `set_pace`). Deliberately not part
+        # of the `Trainer` protocol — a caller sets it with `getattr`, like `progress_snapshot`.
+        self._pace: Callable[[], None] | None = None
 
     def update_config(self, partial: Mapping[str, Any]) -> None:
         """Satisfies `Trainer.update_config` (Phase 0). Thread-safe: safe to call from a
@@ -206,6 +229,38 @@ class NeatTrainer:
             best_fitness_so_far=progress.best_fitness_so_far,
         )
 
+    def set_pace(self, pace: Callable[[], None] | None) -> None:
+        """Installs (or clears) a callback invoked once per simulation round while a
+        generation is running — the hook a caller uses to slow the batch down to a chosen
+        speed. It runs on the training thread and must not raise. Takes effect from the next
+        generation's `evaluate_batch` call at the latest; setting it before `run()` is the
+        normal use."""
+        self._pace = pace
+
+    def visual_snapshot(self) -> BatchVisuals | None:
+        """Thread-safe (single reads of immutable/atomically-replaced values — see
+        `BatchProgress.live`), read-only snapshot of every still-active genome of the
+        in-progress generation: its environment's `Visualizable.visual_state()` and its live
+        `Objective.fitness()`, for Phase 8's viewer. Genomes whose environment is not
+        `Visualizable` are omitted. `None` when no generation is running."""
+        progress = self._current_batch_progress
+        if progress is None:
+            return None
+        genomes = tuple(
+            GenomeVisual(
+                genome_id=live.genome_id,
+                state=dict(live.env.visual_state()),
+                fitness=live.objective.fitness(),
+            )
+            for live in progress.live
+            if isinstance(live.env, Visualizable)
+        )
+        return BatchVisuals(
+            generation=self._generation,
+            population_size=self._neat_config.pop_size,
+            genomes=genomes,
+        )
+
     def run(self) -> Iterator[TrainingUpdate]:
         while True:
             update = self._run_one_generation()
@@ -262,7 +317,7 @@ class NeatTrainer:
                 for genome_id, genome in genomes
             ]
             batch_results = evaluate_batch(
-                entries, step_budget, progress=self._current_batch_progress
+                entries, step_budget, progress=self._current_batch_progress, pace=self._pace
             )
             results.update(batch_results)
             genome_by_id = dict(genomes)

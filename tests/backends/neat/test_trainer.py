@@ -3,12 +3,13 @@ import threading
 import time
 import typing
 import warnings
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
 import pytest
 
-from neuroarena.backends.neat.trainer import GenerationProgress, NeatTrainer
+from neuroarena.backends.neat.trainer import BatchVisuals, GenerationProgress, NeatTrainer
 from neuroarena.config import RunConfig
 from neuroarena.interfaces.compat import IncompatibleDescriptorsError
 from neuroarena.interfaces.protocols import Trainer, TrainingUpdate
@@ -552,3 +553,74 @@ def test_progress_snapshot_reflects_live_state_during_a_generation() -> None:
     assert all(0 <= s.active_genomes_remaining <= 3 for s in live)
     assert all(0 <= s.elapsed_steps <= s.step_ceiling for s in live)
     assert all(s.generation == 0 for s in live)
+
+
+class _VisibleEnvironment(DummyEnvironment):
+    def visual_state(self) -> Mapping[str, float]:
+        return {"x": float(self._t), "y": 0.0, "heading": 0.0}
+
+
+class _SlowObjective(DummyObjective):
+    def update(
+        self,
+        observation: np.ndarray,
+        action: np.ndarray,
+        terminated: bool,
+        truncated: bool,
+        info: dict[str, typing.Any],
+    ) -> None:
+        super().update(observation, action, terminated, truncated, info)
+        time.sleep(0.02)
+
+
+def _poll_visual_snapshots(trainer: NeatTrainer) -> list[BatchVisuals | None]:
+    snapshots: list[BatchVisuals | None] = []
+
+    def _poll() -> None:
+        for _ in range(100):
+            snapshots.append(trainer.visual_snapshot())
+            time.sleep(0.005)
+
+    poller = threading.Thread(target=_poll)
+    poller.start()
+    next(trainer.run())
+    poller.join(timeout=30)
+    return snapshots
+
+
+def test_visual_snapshot_is_none_before_run_and_after_a_generation() -> None:
+    trainer = NeatTrainer(_VisibleEnvironment, DummyObjective(), RunConfig(), population_size=4)
+    assert trainer.visual_snapshot() is None
+    next(trainer.run())
+    assert trainer.visual_snapshot() is None
+
+
+def test_visual_snapshot_reports_each_live_genomes_state_and_fitness() -> None:
+    trainer = NeatTrainer(_VisibleEnvironment, _SlowObjective(), RunConfig(), population_size=3)
+    live = [s for s in _poll_visual_snapshots(trainer) if s is not None]
+    assert live, "expected at least one snapshot while the generation was running"
+    populated = [s for s in live if s.genomes]
+    assert populated, "expected at least one snapshot with live genomes"
+    for snapshot in populated:
+        assert snapshot.generation == 0
+        assert snapshot.population_size == 3
+        assert len(snapshot.genomes) <= 3
+        for genome in snapshot.genomes:
+            assert set(genome.state) == {"x", "y", "heading"}
+            assert genome.fitness >= 0.0
+
+
+def test_visual_snapshot_omits_genomes_whose_env_is_not_visualizable() -> None:
+    trainer = NeatTrainer(DummyEnvironment, _SlowObjective(), RunConfig(), population_size=3)
+    live = [s for s in _poll_visual_snapshots(trainer) if s is not None]
+    assert live
+    assert all(s.genomes == () for s in live)
+
+
+def test_set_pace_is_called_once_per_round_during_a_generation() -> None:
+    calls: list[int] = []
+    trainer = NeatTrainer(DummyEnvironment, DummyObjective(), RunConfig(), population_size=3)
+    trainer.set_pace(lambda: calls.append(1))
+    next(trainer.run())
+    # DummyEnvironment truncates after 5 steps: 5 rounds, and the last leaves nobody to pace.
+    assert len(calls) == 4
