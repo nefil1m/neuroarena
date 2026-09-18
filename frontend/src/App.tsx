@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ModelList } from './components/ModelList'
+import { LiveMetrics } from './components/LiveMetrics'
 import { NewRunForm } from './components/NewRunForm'
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
         resumeModelId={resumeModelId}
         onStarted={() => setRunKey((k) => k + 1)}
       />
+      <LiveMetrics />
       <h2>Saved models</h2>
       <ModelList onResume={setResumeModelId} />
     </div>
