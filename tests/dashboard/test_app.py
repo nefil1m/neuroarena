@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -159,3 +160,27 @@ def test_model_settings_for_an_unknown_model_returns_404(tmp_path: Path) -> None
     client = _client(tmp_path)
     response = client.get("/api/models/does-not-exist/settings")
     assert response.status_code == 404
+
+
+def test_ws_pushes_status_then_progress_and_generation_messages(tmp_path: Path) -> None:
+    track_id = _save_test_track(tmp_path)
+    manager = RunManager(data_dir=tmp_path)
+    app = create_app(run_manager=manager, data_dir=tmp_path)
+    manager.set_poll_interval_ms(10)  # fast polling keeps this test quick
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws") as ws:
+        client.post(
+            "/api/runs",
+            json={"track_id": track_id, "population_size": 6, "max_generations": 1000},
+        )
+        seen_types: set[str] = set()
+        deadline = time.monotonic() + 30  # wall-clock bound; progress msgs arrive every tick
+        while time.monotonic() < deadline:
+            msg = ws.receive_json()
+            seen_types.add(msg["type"])
+            assert msg["schema_version"] == 1
+            if {"status", "progress", "generation"} <= seen_types:
+                break
+        assert {"status", "progress", "generation"} <= seen_types
+    client.post("/api/runs/current/stop")

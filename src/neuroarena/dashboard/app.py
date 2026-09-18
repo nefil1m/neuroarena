@@ -1,15 +1,17 @@
 """FastAPI app factory for Phase 7's dashboard backend — REST routes over `RunManager`
-(Task 9 adds `/ws`). See `../../../docs/phases/phase-7-dashboard-control-panel.md`."""
+plus the `/ws` push endpoint. See `../../../docs/phases/phase-7-dashboard-control-panel.md`."""
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from neuroarena.dashboard.run_manager import NoActiveRunError, RunAlreadyActiveError, RunManager
+from neuroarena.dashboard.ws_protocol import generation_message, progress_message, status_message
 from neuroarena.persistence import checkpoints_repo, models_repo, settings_history_repo
 from neuroarena.persistence.db import connect
 from neuroarena.tracks import store as tracks_store
@@ -137,5 +139,30 @@ def create_app(run_manager: RunManager, data_dir: Path) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"interval_ms": run_manager.poll_interval_ms()}
+
+    @app.websocket("/ws")
+    async def ws_endpoint(websocket: WebSocket) -> None:
+        await websocket.accept()
+        last_generation_sent: int | None = None
+        last_status_sent: str | None = None
+        try:
+            while True:
+                status = run_manager.status()
+                if status.status != last_status_sent:
+                    await websocket.send_json(status_message(status.status, None))
+                    last_status_sent = status.status
+
+                update = run_manager.latest_update()
+                if update is not None and update.progress_index != last_generation_sent:
+                    await websocket.send_json(generation_message(update))
+                    last_generation_sent = update.progress_index
+
+                snapshot = run_manager.progress_snapshot()
+                if snapshot is not None:
+                    await websocket.send_json(progress_message(snapshot))
+
+                await asyncio.sleep(run_manager.poll_interval_ms() / 1000)
+        except WebSocketDisconnect:
+            pass
 
     return app
