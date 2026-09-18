@@ -160,3 +160,70 @@ def test_evaluate_batch_progress_tracks_best_fitness_seen_so_far() -> None:
 def test_evaluate_batch_without_a_progress_argument_is_unaffected() -> None:
     results = evaluate_batch([_entry(0)], StepBudget(remaining=100))
     assert results[0].fitness == 5.0
+
+
+class _TruncatesAfterTwoSteps(DummyEnvironment):
+    def step(self, action: np.ndarray) -> tuple[np.ndarray, bool, bool, dict[str, Any]]:
+        observation, terminated, _truncated, info = super().step(action)
+        return observation, terminated, self._t >= 2, info
+
+
+def test_evaluate_batch_publishes_live_genomes_and_clears_them_at_the_end() -> None:
+    seen: list[tuple[int, ...]] = []
+
+    class _SpyProgress(BatchProgress):
+        def __setattr__(self, name: str, value: Any) -> None:
+            if name == "live":
+                seen.append(tuple(g.genome_id for g in value))
+            super().__setattr__(name, value)
+
+    short_env = _TruncatesAfterTwoSteps()
+    short_entry = BatchEntry(
+        genome_id=0,
+        model=DummyModel(short_env.observation_space, short_env.action_space),
+        env=short_env,
+        objective=DummyObjective(),
+        seed=0,
+    )
+    entries = [short_entry, _entry(1)]
+    evaluate_batch(entries, StepBudget(remaining=100), progress=_SpyProgress(active_count=0))
+    assert seen[0] == (0, 1)  # both alive at the start
+    assert (1,) in seen  # genome 0 dropped out after its episode ended
+    assert seen[-1] == ()  # cleared when the batch is over
+
+
+def test_evaluate_batch_live_genomes_expose_each_genomes_env_and_objective() -> None:
+    entries = [_entry(0)]
+    progress = BatchProgress(active_count=0)
+    captured: list[Any] = []
+
+    def pace() -> None:
+        captured.append(progress.live)
+
+    evaluate_batch(entries, StepBudget(remaining=100), progress=progress, pace=pace)
+    live = captured[0][0]
+    assert live.genome_id == 0
+    assert live.env is entries[0].env
+    assert live.objective is entries[0].objective
+
+
+def test_evaluate_batch_calls_pace_once_per_round_while_genomes_remain() -> None:
+    calls: list[int] = []
+    evaluate_batch([_entry(0)], StepBudget(remaining=100), pace=lambda: calls.append(1))
+    # DummyEnvironment truncates after 5 steps = 5 rounds; the last round leaves no active
+    # genome, so there is nothing left to pace for.
+    assert len(calls) == 4
+
+
+def test_evaluate_batch_does_not_pace_after_a_collective_stop() -> None:
+    class SucceedsAfterOneStep(DummyObjective):
+        def should_stop(self) -> bool:
+            return self._steps >= 1
+
+    calls: list[int] = []
+    evaluate_batch(
+        [_entry(0, SucceedsAfterOneStep()), _entry(1)],
+        StepBudget(remaining=100),
+        pace=lambda: calls.append(1),
+    )
+    assert calls == []
