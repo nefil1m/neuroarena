@@ -1,5 +1,6 @@
 """FastAPI app factory for Phase 7's dashboard backend — REST routes over `RunManager`
-plus the `/ws` push endpoint. See `../../../docs/phases/phase-7-dashboard-control-panel.md`."""
+(plus Phase 8's speed and viewer routes), the `/ws` push endpoint and Phase 8's `/ws/viewer`.
+See `../../../docs/phases/phase-7-dashboard-control-panel.md`."""
 
 from __future__ import annotations
 
@@ -14,11 +15,23 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 
 from neuroarena.dashboard.pacing import SPEED_PRESETS
 from neuroarena.dashboard.run_manager import NoActiveRunError, RunAlreadyActiveError, RunManager
-from neuroarena.dashboard.ws_protocol import generation_message, progress_message, status_message
+from neuroarena.dashboard.viewer_manager import ViewerManager
+from neuroarena.dashboard.ws_protocol import (
+    generation_message,
+    progress_message,
+    status_message,
+    viewer_frame_message,
+    viewer_run_message,
+    viewer_view_message,
+)
 from neuroarena.persistence import checkpoints_repo, models_repo, settings_history_repo
 from neuroarena.persistence.db import connect
+from neuroarena.render.view_settings import ViewSettings
 from neuroarena.tracks import store as tracks_store
 from neuroarena.tracks.store import UnknownTrackError
+
+DEFAULT_VIEWER_URL = "ws://127.0.0.1:8000/ws/viewer"
+VIEWER_FRAME_INTERVAL_S = 1 / 60
 
 
 @dataclasses.dataclass
@@ -47,12 +60,28 @@ class SpeedRequest:
     preset: str
 
 
-def create_app(run_manager: RunManager, data_dir: Path) -> FastAPI:
+@dataclasses.dataclass
+class ViewSettingsRequest:
+    zoom: float | None = None
+    camera_mode: str | None = None
+    follow_rank: int | None = None
+
+
+def create_app(
+    run_manager: RunManager, data_dir: Path, viewer_manager: ViewerManager | None = None
+) -> FastAPI:
+    viewer = (
+        viewer_manager
+        if viewer_manager is not None
+        else ViewerManager(url=DEFAULT_VIEWER_URL, data_dir=data_dir)
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
         yield
-        # Blocking (bounded) join — run off the event loop so it can't stall other handlers.
+        # Blocking (bounded) work — run off the event loop so it can't stall other handlers.
+        # The viewer goes first so it does not sit "disconnected" while the run winds down.
+        await asyncio.to_thread(viewer.shutdown)
         await asyncio.to_thread(run_manager.shutdown)
 
     app = FastAPI(title="neuroarena dashboard", lifespan=lifespan)
@@ -167,6 +196,37 @@ def create_app(run_manager: RunManager, data_dir: Path) -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"preset": run_manager.speed_preset()}
 
+    def _viewer_state() -> dict[str, Any]:
+        return {"open": viewer.is_open(), "settings": viewer.settings().to_dict()}
+
+    @app.get("/api/viewer")
+    def get_viewer() -> dict[str, Any]:
+        return _viewer_state()
+
+    @app.post("/api/viewer/open")
+    def open_viewer() -> dict[str, Any]:
+        try:
+            viewer.open()
+        except OSError as exc:
+            raise HTTPException(
+                status_code=500, detail=f"could not start the viewer: {exc}"
+            ) from exc
+        return _viewer_state()
+
+    @app.post("/api/viewer/close")
+    def close_viewer() -> dict[str, Any]:
+        viewer.close()
+        return _viewer_state()
+
+    @app.patch("/api/viewer/settings")
+    def update_viewer_settings(request: ViewSettingsRequest) -> dict[str, Any]:
+        partial = {k: v for k, v in dataclasses.asdict(request).items() if v is not None}
+        try:
+            settings = viewer.update_settings(partial)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return settings.to_dict()
+
     @app.websocket("/ws")
     async def ws_endpoint(websocket: WebSocket) -> None:
         await websocket.accept()
@@ -189,6 +249,34 @@ def create_app(run_manager: RunManager, data_dir: Path) -> FastAPI:
                     await websocket.send_json(progress_message(snapshot))
 
                 await asyncio.sleep(run_manager.poll_interval_ms() / 1000)
+        except WebSocketDisconnect:
+            pass
+
+    @app.websocket("/ws/viewer")
+    async def ws_viewer(websocket: WebSocket) -> None:
+        await websocket.accept()
+        last_run: tuple[str, str | None, str | None] | None = None
+        last_settings: ViewSettings | None = None
+        try:
+            while True:
+                status = run_manager.status()
+                run_key = (status.status, run_manager.current_track_id(), status.model_id)
+                if run_key != last_run:
+                    await websocket.send_json(viewer_run_message(*run_key))
+                    last_run = run_key
+
+                settings = viewer.settings()
+                if settings != last_settings:
+                    await websocket.send_json(viewer_view_message(settings))
+                    last_settings = settings
+
+                snapshot = run_manager.visual_snapshot()
+                if snapshot is not None:
+                    await websocket.send_json(
+                        viewer_frame_message(snapshot, run_manager.speed_preset())
+                    )
+
+                await asyncio.sleep(VIEWER_FRAME_INTERVAL_S)
         except WebSocketDisconnect:
             pass
 

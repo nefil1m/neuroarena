@@ -5,8 +5,10 @@ from fastapi.testclient import TestClient
 
 from neuroarena.dashboard.app import create_app
 from neuroarena.dashboard.run_manager import RunManager
+from neuroarena.dashboard.viewer_manager import ViewerManager
 from neuroarena.sim.track import Facing, GridCell, TileKind, Track
 from neuroarena.tracks.store import save
+from tests.dashboard.fakes import FakeSpawner
 
 
 def _rounded_rectangle() -> dict[GridCell, TileKind]:
@@ -246,3 +248,103 @@ def test_patch_speed_rejects_an_unknown_preset_with_400(tmp_path: Path) -> None:
     client = _client(tmp_path)
     response = client.patch("/api/speed", json={"preset": "3x"})
     assert response.status_code == 400
+
+
+def _viewer_client(tmp_path: Path, spawner: FakeSpawner) -> TestClient:
+    manager = RunManager(data_dir=tmp_path)
+    viewer = ViewerManager(
+        url="ws://127.0.0.1:8000/ws/viewer",
+        data_dir=tmp_path,
+        spawn=spawner,
+        terminate_timeout_s=0.1,
+    )
+    app = create_app(run_manager=manager, data_dir=tmp_path, viewer_manager=viewer)
+    return TestClient(app)
+
+
+def test_viewer_starts_closed_with_default_settings(tmp_path: Path) -> None:
+    client = _viewer_client(tmp_path, FakeSpawner())
+    response = client.get("/api/viewer")
+    assert response.status_code == 200
+    assert response.json() == {
+        "open": False,
+        "settings": {"zoom": 1.0, "camera_mode": "fit", "follow_rank": 1, "follow_seq": 0},
+    }
+
+
+def test_open_and_close_the_viewer_are_idempotent(tmp_path: Path) -> None:
+    spawner = FakeSpawner()
+    client = _viewer_client(tmp_path, spawner)
+    assert client.post("/api/viewer/open").json()["open"] is True
+    assert client.post("/api/viewer/open").json()["open"] is True
+    assert len(spawner.processes) == 1
+    assert client.post("/api/viewer/close").json()["open"] is False
+    assert client.post("/api/viewer/close").json()["open"] is False
+
+
+def test_patch_viewer_settings_updates_and_validates(tmp_path: Path) -> None:
+    client = _viewer_client(tmp_path, FakeSpawner())
+    ok = client.patch(
+        "/api/viewer/settings",
+        json={"camera_mode": "follow_rank", "follow_rank": 3, "zoom": 2.0},
+    )
+    assert ok.status_code == 200
+    assert ok.json() == {
+        "zoom": 2.0,
+        "camera_mode": "follow_rank",
+        "follow_rank": 3,
+        "follow_seq": 1,
+    }
+    assert client.patch("/api/viewer/settings", json={"camera_mode": "orbit"}).status_code == 400
+    assert client.patch("/api/viewer/settings", json={"zoom": 99}).status_code == 400
+    assert client.get("/api/viewer").json()["settings"]["zoom"] == 2.0  # unchanged by the bad ones
+
+
+def test_app_shutdown_closes_the_viewer(tmp_path: Path) -> None:
+    spawner = FakeSpawner()
+    manager = RunManager(data_dir=tmp_path)
+    viewer = ViewerManager(
+        url="ws://x/ws/viewer", data_dir=tmp_path, spawn=spawner, terminate_timeout_s=0.1
+    )
+    app = create_app(run_manager=manager, data_dir=tmp_path, viewer_manager=viewer)
+    with TestClient(app) as client:
+        client.post("/api/viewer/open")
+        assert spawner.processes[0].terminated is False
+    assert spawner.processes[0].terminated is True
+
+
+def test_ws_viewer_sends_run_and_view_messages_on_connect_when_idle(tmp_path: Path) -> None:
+    client = _viewer_client(tmp_path, FakeSpawner())
+    with client.websocket_connect("/ws/viewer") as ws:
+        first = ws.receive_json()
+        second = ws.receive_json()
+    assert {first["type"], second["type"]} == {"run", "view"}
+    run = first if first["type"] == "run" else second
+    assert run["data"] == {"state": "idle", "track_id": None, "model_id": None}
+
+
+def test_ws_viewer_streams_frames_with_car_poses_for_a_running_run(tmp_path: Path) -> None:
+    track_id = _save_test_track(tmp_path)
+    client = _viewer_client(tmp_path, FakeSpawner())
+    client.post(
+        "/api/runs", json={"track_id": track_id, "population_size": 6, "max_generations": 1000}
+    )
+    run_messages: list[dict[str, object]] = []
+    frame: dict[str, object] | None = None
+    try:
+        with client.websocket_connect("/ws/viewer") as ws:
+            deadline = time.monotonic() + 30.0
+            while time.monotonic() < deadline and frame is None:
+                message = ws.receive_json()
+                if message["type"] == "run":
+                    run_messages.append(message["data"])
+                elif message["type"] == "frame" and message["data"]["cars"]:
+                    frame = message["data"]
+    finally:
+        client.post("/api/runs/current/stop")
+    assert run_messages and run_messages[-1]["track_id"] == track_id
+    assert frame is not None
+    assert frame["population_size"] == 6
+    assert frame["speed"] == "max"
+    car = frame["cars"][0]  # type: ignore[index]
+    assert set(car) == {"id", "x", "y", "heading", "fitness"}

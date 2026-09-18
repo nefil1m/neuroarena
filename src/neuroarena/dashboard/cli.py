@@ -11,6 +11,7 @@ import uvicorn
 
 from neuroarena.dashboard.app import create_app
 from neuroarena.dashboard.run_manager import RunManager
+from neuroarena.dashboard.viewer_manager import ViewerManager
 
 DEFAULT_DATA_DIR = Path("data")
 DEFAULT_PORT = 8000
@@ -23,7 +24,10 @@ def main() -> None:
     args = parser.parse_args()
 
     run_manager = RunManager(data_dir=args.data_dir)
-    app = create_app(run_manager=run_manager, data_dir=args.data_dir)
+    viewer_manager = ViewerManager(
+        url=f"ws://127.0.0.1:{args.port}/ws/viewer", data_dir=args.data_dir
+    )
+    app = create_app(run_manager=run_manager, data_dir=args.data_dir, viewer_manager=viewer_manager)
     # 127.0.0.1, not 0.0.0.0: local-first, no auth (spec) — never bind every interface.
     uvicorn.run(app, host="127.0.0.1", port=args.port)
 
