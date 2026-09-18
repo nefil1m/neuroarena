@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import threading
 
 
 class FakeProcess:
@@ -44,3 +45,30 @@ class FakeSpawner:
         process = FakeProcess(args, stubborn=self._stubborn)
         self.processes.append(process)
         return process
+
+
+class BlockingWaitProcess(FakeProcess):
+    """A stubborn process whose `wait` blocks until `release` is set (bounded by `timeout`)."""
+
+    def __init__(self, args: list[str]) -> None:
+        super().__init__(args, stubborn=True)
+        self.in_wait = threading.Event()
+        self.release = threading.Event()
+
+    def wait(self, timeout: float | None = None) -> int:
+        self.in_wait.set()
+        self.release.wait(timeout=30.0)
+        raise subprocess.TimeoutExpired(cmd=self.args, timeout=timeout or 0.0)
+
+
+class NeverExitsProcess(FakeProcess):
+    """Survives terminate and kill: every `wait` times out."""
+
+    def __init__(self, args: list[str]) -> None:
+        super().__init__(args, stubborn=True)
+
+    def kill(self) -> None:
+        self.killed = True
+
+    def wait(self, timeout: float | None = None) -> int:
+        raise subprocess.TimeoutExpired(cmd=self.args, timeout=timeout or 0.0)

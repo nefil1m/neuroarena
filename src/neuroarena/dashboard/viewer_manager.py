@@ -5,6 +5,7 @@ main thread, which uvicorn already owns. See
 
 from __future__ import annotations
 
+import logging
 import subprocess
 import sys
 import threading
@@ -13,6 +14,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from neuroarena.render.view_settings import ViewSettings
+
+_log = logging.getLogger(__name__)
 
 
 class _Process(Protocol):
@@ -39,7 +42,8 @@ class ViewerManager:
         self._data_dir = data_dir
         self._spawn = spawn
         self._terminate_timeout_s = terminate_timeout_s
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()  # the process handle only
+        self._settings_lock = threading.Lock()  # never held across process I/O
         self._process: _Process | None = None
         self._settings = ViewSettings()
 
@@ -74,7 +78,10 @@ class ViewerManager:
                 process.wait(timeout=self._terminate_timeout_s)
             except subprocess.TimeoutExpired:
                 process.kill()
-                process.wait()
+                try:
+                    process.wait(timeout=self._terminate_timeout_s)
+                except subprocess.TimeoutExpired:
+                    _log.warning("viewer process did not exit after kill; giving up waiting")
             return True
 
     def is_open(self) -> bool:
@@ -85,11 +92,11 @@ class ViewerManager:
         self.close()
 
     def settings(self) -> ViewSettings:
-        with self._lock:
+        with self._settings_lock:
             return self._settings
 
     def update_settings(self, partial: Mapping[str, Any]) -> ViewSettings:
-        with self._lock:
+        with self._settings_lock:
             self._settings = self._settings.updated(partial)  # raises ValueError, unchanged
             return self._settings
 

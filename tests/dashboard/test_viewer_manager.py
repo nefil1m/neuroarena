@@ -1,11 +1,13 @@
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 from neuroarena.dashboard.viewer_manager import ViewerManager
 from neuroarena.render.view_settings import ViewSettings
-from tests.dashboard.fakes import FakeSpawner
+from tests.dashboard.fakes import BlockingWaitProcess, FakeSpawner, NeverExitsProcess
 
 
 def _manager(tmp_path: Path, spawner: FakeSpawner) -> ViewerManager:
@@ -91,3 +93,33 @@ def test_an_invalid_settings_update_raises_and_changes_nothing(tmp_path: Path) -
     with pytest.raises(ValueError):
         manager.update_settings({"camera_mode": "orbit"})
     assert manager.settings() == ViewSettings()
+
+
+def test_settings_do_not_wait_for_a_close_stuck_in_a_process_wait(tmp_path: Path) -> None:
+    process = BlockingWaitProcess([])
+    manager = ViewerManager(
+        url="ws://x", data_dir=tmp_path, spawn=lambda args: process, terminate_timeout_s=0.1
+    )
+    manager.open()
+    closer = threading.Thread(target=manager.close, daemon=True)
+    closer.start()
+    try:
+        assert process.in_wait.wait(timeout=5.0)
+        start = time.monotonic()
+        assert manager.settings() == ViewSettings()
+        manager.update_settings({"zoom": 2.0})
+        assert time.monotonic() - start < 1.0
+    finally:
+        process.release.set()
+        closer.join(timeout=10.0)
+    assert not closer.is_alive()
+
+
+def test_close_returns_even_if_the_process_never_exits_after_kill(tmp_path: Path) -> None:
+    process = NeverExitsProcess([])
+    manager = ViewerManager(
+        url="ws://x", data_dir=tmp_path, spawn=lambda args: process, terminate_timeout_s=0.05
+    )
+    manager.open()
+    assert manager.close() is True
+    assert process.killed is True
